@@ -1,0 +1,19 @@
+{
+    "name": "ibibicloud/think-framework",
+    "description": "基于thinkphp5.1.42框架核心类库",
+    "license": "Apache-2.0",
+    "authors": [
+        {
+            "name": "ibibicloud",
+            "homepage": "https://www.ibibi.cloud/"
+        }
+    ],
+    "require": {
+        "php": ">=7.2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "think\\": "src/think/"
+        }
+    }
+}
