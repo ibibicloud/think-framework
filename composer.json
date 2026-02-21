@@ -1,16 +1,17 @@
 {
     "name": "ibibicloud/think-framework",
+    "type": "library",
     "license": "Apache-2.0",
     "require": {
         "php": ">=7.2.0",
         "ext-json": "*",
         "ext-mbstring": "*",
         "ext-curl": "*",
-        "ibibicloud/think-container": "*"
+        "ibibicloud/think-container": "5.1.*"
     },
     "autoload": {
         "psr-4": {
-            "think\\": "src/think/"
+            "think\\": "src/think"
         }
     }
 }
