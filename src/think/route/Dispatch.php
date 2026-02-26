@@ -1,90 +1,81 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\route;
 
+use Psr\Http\Message\ResponseInterface;
+use ReflectionClass;
+use ReflectionException;
+use ReflectionMethod;
 use think\App;
 use think\Container;
-use think\exception\ValidateException;
+use think\exception\HttpException;
 use think\Request;
 use think\Response;
+use think\Validate;
 
+/**
+ * 路由调度基础类
+ */
 abstract class Dispatch
 {
+    /**
+     * 控制器名
+     * @var string
+     */
+    protected $controller;
+
+    /**
+     * 操作名
+     * @var string
+     */
+    protected $actionName;
+
     /**
      * 应用对象
      * @var App
      */
     protected $app;
 
-    /**
-     * 请求对象
-     * @var Request
-     */
-    protected $request;
-
-    /**
-     * 路由规则
-     * @var Rule
-     */
-    protected $rule;
-
-    /**
-     * 调度信息
-     * @var mixed
-     */
-    protected $dispatch;
-
-    /**
-     * 调度参数
-     * @var array
-     */
-    protected $param;
-
-    /**
-     * 状态码
-     * @var string
-     */
-    protected $code;
-
-    /**
-     * 是否进行大小写转换
-     * @var bool
-     */
-    protected $convert;
-
-    public function __construct(Request $request, Rule $rule, $dispatch, $param = [], $code = null)
+    public function __construct(protected Request $request, protected Rule $rule, protected $dispatch, protected array $param = [], protected array $option = [], protected ?RuleItem $miss = null)
     {
-        $this->request  = $request;
-        $this->rule     = $rule;
-        $this->app      = Container::get('app');
-        $this->dispatch = $dispatch;
-        $this->param    = $param;
-        $this->code     = $code;
-
-        if (isset($param['convert'])) {
-            $this->convert = $param['convert'];
-        }
     }
 
-    public function init()
+    /**
+     * 执行路由调度
+     * @access public
+     * @return Response
+     */
+    public function run(): Response
     {
-        // 执行路由后置操作
-        if ($this->rule->doAfter()) {
-            // 设置请求的路由信息
+        $data = $this->exec();
+        return $this->autoResponse($data);
+    }
 
-            // 设置当前请求的参数
-            $this->request->setRouteVars($this->rule->getVars());
-            $this->request->routeInfo([
-                'rule'   => $this->rule->getRule(),
-                'route'  => $this->rule->getRoute(),
-                'option' => $this->rule->getOption(),
-                'var'    => $this->rule->getVars(),
-            ]);
+    protected function autoResponse($data): Response
+    {
+        if ($data instanceof Response) {
+            $response = $data;
+        } elseif ($data instanceof ResponseInterface) {
+            $response = Response::create((string) $data->getBody(), 'html', $data->getStatusCode());
 
-            $this->doRouteAfter();
+            foreach ($data->getHeaders() as $header => $values) {
+                $response->header([$header => implode(", ", $values)]);
+            }
+        } elseif (!is_null($data)) {
+            // 默认自动识别响应输出类型
+            $type     = $this->request->isJson() ? 'json' : 'html';
+            $response = Response::create($data, $type);
+        } else {
+            $data = ob_get_clean();
+
+            $content  = false === $data ? '' : $data;
+            $status   = '' === $content && $this->request->isJson() ? 204 : 200;
+            $response = Response::create($content, 'html', $status);
         }
 
-        return $this;
+        return $response;
     }
 
     /**
@@ -92,122 +83,242 @@ abstract class Dispatch
      * @access protected
      * @return void
      */
-    protected function doRouteAfter()
+    protected function doRouteAfter(): void
     {
-        // 记录匹配的路由信息
-        $option  = $this->rule->getOption();
-        $matches = $this->rule->getVars();
+        $option = $this->option;
 
         // 添加中间件
         if (!empty($option['middleware'])) {
-            $this->app['middleware']->import($option['middleware']);
-        }
+            if (isset($option['without_middleware'])) {
+                $middleware = [];
+                foreach ($option['middleware'] as $item) {
+                    $middlewareName = is_array($item) ? $item[0] : $item;
 
-        // 指定Header数据
-        if (!empty($option['header'])) {
-            $header = $option['header'];
-        }
-
-        // 开启请求缓存
-        if (isset($option['cache']) && $this->request->isGet()) {
-            $this->parseRequestCache($option['cache']);
+                    if (!in_array($middlewareName, $option['without_middleware'], true)) {
+                        $middleware[] = $item;
+                    }
+                }
+            } else {
+                $middleware = $option['middleware'];
+            }
+            $this->app->middleware->import($middleware, 'route');
         }
 
         if (!empty($option['append'])) {
-            $this->request->setRouteVars($option['append']);
+            $this->param = array_merge($this->param, $option['append']);
+        }
+
+        // 绑定模型数据
+        if (!empty($option['model'])) {
+            $this->createBindModel($option['model'], $this->param);
+        }
+
+        // 记录当前请求的路由规则
+        $this->request->setRule($this->rule);
+
+        // 记录路由变量
+        $this->request->setRoute($this->param);
+
+        // 数据自动验证
+        if (isset($option['validate'])) {
+            $this->autoValidate($option['validate']);
         }
     }
 
     /**
-     * 执行路由调度
-     * @access public
-     * @return mixed
+     * 获取操作的绑定参数
+     * @access protected
+     * @return array
      */
-    public function run()
+    protected function getActionBindVars(): array
     {
-        $option = $this->rule->getOption();
+        $bind = $this->rule->config('action_bind_param');
+        return match ($bind) {
+            'route' => $this->param,
+            'param' => $this->request->param(),
+            default => array_merge($this->request->get(), $this->param),
+        };
+    }
 
-        // 检测路由after行为
-        if (!empty($option['after'])) {
-            $dispatch = $this->checkAfter($option['after']);
+    /**
+     * 执行中间件调度
+     * @access public
+     * @param object $instance 控制器实例
+     * @param string $action
+     * @return void
+     */
+    protected function responseWithMiddlewarePipeline($instance, $action)
+    {
+        // 注册控制器中间件
+        $this->registerControllerMiddleware($instance);
+        return $this->app->middleware->pipeline('controller')
+            ->send($this->request)
+            ->then(function () use ($instance, $action) {
+                // 获取当前操作名
+                $suffix = $this->rule->config('action_suffix');
+                $action = $action . $suffix;
 
-            if ($dispatch instanceof Response) {
-                return $dispatch;
+                if (is_callable([$instance, $action])) {
+                    $vars = $this->getActionBindVars();
+                    try {
+                        $reflect = new ReflectionMethod($instance, $action);
+                        // 严格获取当前操作方法名
+                        $actionName = $reflect->getName();
+                        if ($suffix) {
+                            $actionName = substr($actionName, 0, -strlen($suffix));
+                        }
+
+                        $this->request->setAction($actionName);
+                    } catch (ReflectionException $e) {
+                        $reflect = new ReflectionMethod($instance, '__call');
+                        $vars    = [$action, $vars];
+                        $this->request->setAction($action);
+                    }
+                } else {
+                    // 操作不存在
+                    throw new HttpException(404, 'method not exists:' . $instance::class . '->' . $action . '()');
+                }
+
+                $data = $this->app->invokeReflectMethod($instance, $reflect, $vars);
+
+                return $this->autoResponse($data);
+            });
+    }
+
+    /**
+     * 使用反射机制注册控制器中间件
+     * @access public
+     * @param object $controller 控制器实例
+     * @return void
+     */
+    protected function registerControllerMiddleware($controller): void
+    {
+        $class = new ReflectionClass($controller);
+
+        if ($class->hasProperty('middleware')) {
+            $reflectionProperty = $class->getProperty('middleware');
+
+            if (PHP_VERSION_ID < 80100) {
+                $reflectionProperty->setAccessible(true);
+            }
+
+            $middlewares = $reflectionProperty->getValue($controller);
+            $action      = $this->request->action(true);
+
+            foreach ($middlewares as $key => $val) {
+                if (!is_int($key)) {
+                    $middleware = $key;
+                    $options    = $val;
+                } elseif (isset($val['middleware'])) {
+                    $middleware = $val['middleware'];
+                    $options    = $val['options'] ?? [];
+                } else {
+                    $middleware = $val;
+                    $options    = [];
+                }
+
+                if (isset($options['only']) && !in_array($action, $this->parseActions($options['only']))) {
+                    continue;
+                } elseif (isset($options['except']) && in_array($action, $this->parseActions($options['except']))) {
+                    continue;
+                }
+
+                if (is_string($middleware) && str_contains($middleware, ':')) {
+                    $middleware = explode(':', $middleware);
+                    if (count($middleware) > 1) {
+                        $middleware = [$middleware[0], array_slice($middleware, 1)];
+                    }
+                }
+
+                $this->app->middleware->controller($middleware);
+            }
+        }
+    }
+
+    protected function parseActions($actions)
+    {
+        return array_map(function ($item) {
+            return strtolower($item);
+        }, is_string($actions) ? explode(',', $actions) : $actions);
+    }
+
+    /**
+     * 路由绑定模型实例
+     * @access protected
+     * @param array $bindModel 绑定模型
+     * @param array $matches   路由变量
+     * @return void
+     */
+    protected function createBindModel(array $bindModel, array $matches): void
+    {
+        foreach ($bindModel as $key => $val) {
+            if ($val instanceof \Closure) {
+                $result = $this->app->invokeFunction($val, $matches);
+            } else {
+                $fields = explode('&', $key);
+
+                if (is_array($val)) {
+                    [$model, $exception] = $val;
+                } else {
+                    $model     = $val;
+                    $exception = true;
+                }
+
+                $where = [];
+                $match = true;
+
+                foreach ($fields as $field) {
+                    if (!isset($matches[$field])) {
+                        $match = false;
+                        break;
+                    } else {
+                        $where[] = [$field, '=', $matches[$field]];
+                    }
+                }
+
+                if ($match) {
+                    $result = $model::where($where)->failException($exception)->find();
+                }
+            }
+
+            if (!empty($result)) {
+                // 注入容器
+                $this->app->instance($result::class, $result);
+            }
+        }
+    }
+
+    /**
+     * 验证数据
+     * @access protected
+     * @param array $option
+     * @return void
+     * @throws \think\exception\ValidateException
+     */
+    protected function autoValidate(array $option): void
+    {
+        [$validate, $scene, $message, $batch] = $option;
+
+        if (is_array($validate)) {
+            // 指定验证规则
+            $v = new Validate();
+            $v->rule($validate);
+        } else {
+            // 调用验证器
+            $class = str_contains($validate, '\\') ? $validate : $this->app->parseClass('validate', $validate);
+
+            $v = new $class();
+
+            if (!empty($scene)) {
+                $v->scene($scene);
             }
         }
 
-        $data = $this->exec();
-
-        return $this->autoResponse($data);
-    }
-
-    protected function autoResponse($data)
-    {
-        if ($data instanceof Response) {
-            $response = $data;
-        } elseif (!is_null($data)) {
-            // 默认自动识别响应输出类型
-            $isAjax = $this->request->isAjax();
-            $type   = $isAjax ? $this->rule->getConfig('default_ajax_return') : $this->rule->getConfig('default_return_type');
-
-            $response = Response::create($data, $type);
-        } else {
-            $data    = ob_get_clean();
-            $content = false === $data ? '' : $data;
-            $status  = '' === $content && $this->request->isJson() ? 204 : 200;
-
-            $response = Response::create($content, '', $status);
-        }
-
-        return $response;
-    }
-
-    /**
-     * 检查路由后置行为
-     * @access protected
-     * @param  mixed   $after 后置行为
-     * @return mixed
-     */
-    protected function checkAfter($after)
-    {
-        $this->app['log']->notice('路由后置行为建议使用中间件替代！');
-
-        $result = null;
-
-        // 路由规则重定向
-        if ($result instanceof Response) {
-            return $result;
-        }
-
-        return false;
-    }
-
-    /**
-     * 处理路由请求缓存
-     * @access protected
-     * @param  Request       $request 请求对象
-     * @param  string|array  $cache  路由缓存
-     * @return void
-     */
-    protected function parseRequestCache($cache)
-    {
-        if (is_array($cache)) {
-            list($key, $expire, $tag) = array_pad($cache, 3, null);
-        } else {
-            $key    = str_replace('|', '/', $this->request->url());
-            $expire = $cache;
-            $tag    = null;
-        }
-
-        $cache = $this->request->cache($key, $expire, $tag);
-        $this->app->setResponseCache($cache);
-    }
-
-    public function convert($convert)
-    {
-        $this->convert = $convert;
-
-        return $this;
+        /** @var Validate $v */
+        $v->message($message)
+            ->batch($batch)
+            ->failException(true)
+            ->check($this->request->param());
     }
 
     public function getDispatch()
@@ -215,29 +326,42 @@ abstract class Dispatch
         return $this->dispatch;
     }
 
-    public function getParam()
+    public function getParam(): array
     {
         return $this->param;
     }
 
     abstract public function exec();
 
-    public function __sleep()
+    public function __serialize(): array
     {
-        return ['rule', 'dispatch', 'convert', 'param', 'code', 'controller', 'actionName'];
+        return [
+            'rule'       => $this->rule,
+            'dispatch'   => $this->dispatch,
+            'param'      => $this->param,
+            'controller' => $this->controller,
+            'actionName' => $this->actionName,
+        ];
     }
 
-    public function __wakeup()
+    public function __unserialize(array $data): void
     {
-        $this->app     = Container::get('app');
-        $this->request = $this->app['request'];
+        $this->rule       = $data['rule'];
+        $this->dispatch   = $data['dispatch'];
+        $this->param      = $data['param'];
+        $this->controller = $data['controller'];
+        $this->actionName = $data['actionName'];
+        
+        $this->app     = Container::pull('app');
+        $this->request = $this->app->request;
     }
 
     public function __debugInfo()
     {
-        $data = get_object_vars($this);
-        unset($data['app'], $data['request'], $data['rule']);
-
-        return $data;
+        return [
+            'dispatch' => $this->dispatch,
+            'param'    => $this->param,
+            'rule'     => $this->rule,
+        ];
     }
 }

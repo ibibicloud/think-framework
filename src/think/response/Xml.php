@@ -1,11 +1,17 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\response;
 
 use think\Collection;
+use think\Cookie;
 use think\Model;
 use think\Response;
 
+/**
+ * XML Response
+ */
 class Xml extends Response
 {
     // 输出参数
@@ -24,16 +30,22 @@ class Xml extends Response
 
     protected $contentType = 'text/xml';
 
+    public function __construct(Cookie $cookie, $data = '', int $code = 200)
+    {
+        $this->init($data, $code);
+        $this->cookie = $cookie;
+    }
+
     /**
      * 处理数据
      * @access protected
      * @param  mixed $data 要处理的数据
      * @return mixed
      */
-    protected function output($data)
+    protected function output($data): string
     {
         if (is_string($data)) {
-            if (0 !== strpos($data, '<?xml')) {
+            if (!str_starts_with($data, '<?xml')) {
                 $encoding = $this->options['encoding'];
                 $xml      = "<?xml version=\"1.0\" encoding=\"{$encoding}\"?>";
                 $data     = $xml . $data;
@@ -51,12 +63,12 @@ class Xml extends Response
      * @param  mixed $data 数据
      * @param  string $root 根节点名
      * @param  string $item 数字索引的子节点名
-     * @param  string $attr 根节点属性
+     * @param  mixed  $attr 根节点属性
      * @param  string $id   数字索引子节点key转换的属性名
      * @param  string $encoding 数据编码
      * @return string
      */
-    protected function xmlEncode($data, $root, $item, $attr, $id, $encoding)
+    protected function xmlEncode($data, string $root, string $item, $attr, string $id, string $encoding): string
     {
         if (is_array($attr)) {
             $array = [];
@@ -84,7 +96,7 @@ class Xml extends Response
      * @param  string $id   数字索引key转换为的属性名
      * @return string
      */
-    protected function dataToXml($data, $item, $id)
+    protected function dataToXml($data, string $item, string $id): string
     {
         $xml = $attr = '';
 

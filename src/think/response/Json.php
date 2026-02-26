@@ -1,9 +1,15 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\response;
 
+use think\Cookie;
 use think\Response;
 
+/**
+ * Json Response
+ */
 class Json extends Response
 {
     // 输出参数
@@ -13,14 +19,20 @@ class Json extends Response
 
     protected $contentType = 'application/json';
 
+    public function __construct(Cookie $cookie, $data = '', int $code = 200)
+    {
+        $this->init($data, $code);
+        $this->cookie = $cookie;
+    }
+
     /**
      * 处理数据
      * @access protected
      * @param  mixed $data 要处理的数据
-     * @return mixed
+     * @return string
      * @throws \Exception
      */
-    protected function output($data)
+    protected function output($data): string
     {
         try {
             // 返回JSON数据格式到客户端 包含状态信息
@@ -38,5 +50,4 @@ class Json extends Response
             throw $e;
         }
     }
-
 }

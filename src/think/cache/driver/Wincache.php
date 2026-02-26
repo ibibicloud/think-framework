@@ -1,28 +1,38 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\cache\driver;
 
+use DateInterval;
+use DateTimeInterface;
 use think\cache\Driver;
+use think\exception\InvalidCacheException;
 
 /**
  * Wincache缓存驱动
- * @author    liu21st <liu21st@gmail.com>
  */
 class Wincache extends Driver
 {
+    /**
+     * 配置参数
+     * @var array
+     */
     protected $options = [
-        'prefix'    => '',
-        'expire'    => 0,
-        'serialize' => true,
+        'prefix'      => '',
+        'expire'      => 0,
+        'tag_prefix'  => 'tag:',
+        'serialize'   => [],
+        'fail_delete' => false,
     ];
 
     /**
      * 架构函数
      * @access public
-     * @param  array $options 缓存参数
+     * @param array $options 缓存参数
      * @throws \BadFunctionCallException
      */
-    public function __construct($options = [])
+    public function __construct(array $options = [])
     {
         if (!function_exists('wincache_ucache_info')) {
             throw new \BadFunctionCallException('not support: WinCache');
@@ -36,10 +46,10 @@ class Wincache extends Driver
     /**
      * 判断缓存
      * @access public
-     * @param  string $name 缓存变量名
+     * @param string $name 缓存变量名
      * @return bool
      */
-    public function has($name)
+    public function has($name): bool
     {
         $this->readTimes++;
 
@@ -51,31 +61,30 @@ class Wincache extends Driver
     /**
      * 读取缓存
      * @access public
-     * @param  string $name 缓存变量名
-     * @param  mixed  $default 默认值
+     * @param string $name    缓存变量名
+     * @param mixed  $default 默认值
      * @return mixed
      */
-    public function get($name, $default = false)
+    public function get($name, $default = null): mixed
     {
-        $this->readTimes++;
-
         $key = $this->getCacheKey($name);
-
-        return wincache_ucache_exists($key) ? $this->unserialize(wincache_ucache_get($key)) : $default;
+        try {
+            return wincache_ucache_exists($key) ? $this->unserialize(wincache_ucache_get($key)) : $this->getDefaultValue($name, $default);
+        } catch (InvalidCacheException $e) {
+            return $this->getDefaultValue($name, $default, true);
+        }
     }
 
     /**
      * 写入缓存
      * @access public
-     * @param  string            $name 缓存变量名
-     * @param  mixed             $value  存储数据
-     * @param  integer|\DateTime $expire  有效时间（秒）
-     * @return boolean
+     * @param string                             $name   缓存变量名
+     * @param mixed                              $value  存储数据
+     * @param int|DateInterval|DateTimeInterface $expire 有效时间（秒）
+     * @return bool
      */
-    public function set($name, $value, $expire = null)
+    public function set($name, $value, $expire = null): bool
     {
-        $this->writeTimes++;
-
         if (is_null($expire)) {
             $expire = $this->options['expire'];
         }
@@ -84,12 +93,7 @@ class Wincache extends Driver
         $expire = $this->getExpireTime($expire);
         $value  = $this->serialize($value);
 
-        if ($this->tag && !$this->has($name)) {
-            $first = true;
-        }
-
         if (wincache_ucache_set($key, $value, $expire)) {
-            isset($first) && $this->setTagItem($key);
             return true;
         }
 
@@ -99,14 +103,12 @@ class Wincache extends Driver
     /**
      * 自增缓存（针对数值缓存）
      * @access public
-     * @param  string    $name 缓存变量名
-     * @param  int       $step 步长
+     * @param string $name 缓存变量名
+     * @param int    $step 步长
      * @return false|int
      */
     public function inc($name, $step = 1)
     {
-        $this->writeTimes++;
-
         $key = $this->getCacheKey($name);
 
         return wincache_ucache_inc($key, $step);
@@ -115,14 +117,12 @@ class Wincache extends Driver
     /**
      * 自减缓存（针对数值缓存）
      * @access public
-     * @param  string    $name 缓存变量名
-     * @param  int       $step 步长
+     * @param string $name 缓存变量名
+     * @param int    $step 步长
      * @return false|int
      */
     public function dec($name, $step = 1)
     {
-        $this->writeTimes++;
-
         $key = $this->getCacheKey($name);
 
         return wincache_ucache_dec($key, $step);
@@ -131,36 +131,32 @@ class Wincache extends Driver
     /**
      * 删除缓存
      * @access public
-     * @param  string $name 缓存变量名
-     * @return boolean
+     * @param string $name 缓存变量名
+     * @return bool
      */
-    public function rm($name)
+    public function delete($name): bool
     {
-        $this->writeTimes++;
-
         return wincache_ucache_delete($this->getCacheKey($name));
     }
 
     /**
      * 清除缓存
      * @access public
-     * @param  string $tag 标签名
-     * @return boolean
+     * @return bool
      */
-    public function clear($tag = null)
+    public function clear(): bool
     {
-        if ($tag) {
-            $keys = $this->getTagItem($tag);
-
-            wincache_ucache_delete($keys);
-
-            $tagName = $this->getTagkey($tag);
-            $this->rm($tagName);
-            return true;
-        }
-
-        $this->writeTimes++;
         return wincache_ucache_clear();
     }
 
+    /**
+     * 删除缓存标签
+     * @access public
+     * @param array $keys 缓存标识列表
+     * @return void
+     */
+    public function clearTag($keys): void
+    {
+        wincache_ucache_delete($keys);
+    }
 }

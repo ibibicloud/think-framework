@@ -1,124 +1,192 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think;
 
+use DateInterval;
+use DateTimeInterface;
+use Psr\SimpleCache\CacheInterface;
 use think\cache\Driver;
+use think\cache\TagSet;
+use think\exception\InvalidArgumentException;
+use think\helper\Arr;
 
 /**
- * Class Cache
- *
- * @package think
- *
+ * 缓存管理类
  * @mixin Driver
  * @mixin \think\cache\driver\File
  */
-class Cache
+class Cache extends Manager implements CacheInterface
 {
-    /**
-     * 缓存实例
-     * @var array
-     */
-    protected $instance = [];
+
+    protected $namespace = '\\think\\cache\\driver\\';
 
     /**
-     * 缓存配置
-     * @var array
+     * 默认驱动
+     * @return string|null
      */
-    protected $config = [];
-
-    /**
-     * 操作句柄
-     * @var object
-     */
-    protected $handler;
-
-    public function __construct(array $config = [])
+    public function getDefaultDriver(): ?string
     {
-        $this->config = $config;
-        $this->init($config);
+        return $this->getConfig('default');
     }
 
     /**
-     * 连接缓存
+     * 获取缓存配置
      * @access public
-     * @param  array         $options  配置数组
-     * @param  bool|string   $name 缓存连接标识 true 强制重新连接
+     * @param null|string $name    名称
+     * @param mixed       $default 默认值
+     * @return mixed
+     */
+    public function getConfig(?string $name = null, $default = null)
+    {
+        if (!is_null($name)) {
+            return $this->app->config->get('cache.' . $name, $default);
+        }
+
+        return $this->app->config->get('cache');
+    }
+
+    /**
+     * 获取驱动配置
+     * @param string $store
+     * @param string $name
+     * @param mixed  $default
+     * @return array
+     */
+    public function getStoreConfig(string $store, ?string $name = null, $default = null)
+    {
+        if ($config = $this->getConfig("stores.{$store}")) {
+            return Arr::get($config, $name, $default);
+        }
+
+        throw new \InvalidArgumentException("Store [$store] not found.");
+    }
+
+    protected function resolveType(string $name)
+    {
+        return $this->getStoreConfig($name, 'type', 'file');
+    }
+
+    protected function resolveConfig(string $name)
+    {
+        return $this->getStoreConfig($name);
+    }
+
+    /**
+     * 连接或者切换缓存
+     * @access public
+     * @param string|null $name 连接配置名
      * @return Driver
      */
-    public function connect(array $options = [], $name = false)
+    public function store(?string $name = null)
     {
-        if (false === $name) {
-            $name = md5(serialize($options));
-        }
-
-        if (true === $name || !isset($this->instance[$name])) {
-            $type = !empty($options['type']) ? $options['type'] : 'File';
-
-            if (true === $name) {
-                $name = md5(serialize($options));
-            }
-
-            $this->instance[$name] = Loader::factory($type, '\\think\\cache\\driver\\', $options);
-        }
-
-        return $this->instance[$name];
+        return $this->driver($name);
     }
 
     /**
-     * 自动初始化缓存
+     * 清空缓冲池
      * @access public
-     * @param  array         $options  配置数组
-     * @param  bool          $force    强制更新
-     * @return Driver
+     * @return bool
      */
-    public function init(array $options = [], $force = false)
+    public function clear(): bool
     {
-        if (is_null($this->handler) || $force) {
-
-            if ('complex' == $options['type']) {
-                $default = $options['default'];
-                $options = isset($options[$default['type']]) ? $options[$default['type']] : $default;
-            }
-
-            $this->handler = $this->connect($options);
-        }
-
-        return $this->handler;
-    }
-
-    public static function __make(Config $config)
-    {
-        return new static($config->pull('cache'));
-    }
-
-    public function getConfig()
-    {
-        return $this->config;
-    }
-
-    public function setConfig(array $config)
-    {
-        $this->config = array_merge($this->config, $config);
+        return $this->store()->clear();
     }
 
     /**
-     * 切换缓存类型 需要配置 cache.type 为 complex
+     * 读取缓存
      * @access public
-     * @param  string $name 缓存标识
-     * @return Driver
+     * @param string $key     缓存变量名
+     * @param mixed  $default 默认值
+     * @return mixed
      */
-    public function store($name = '')
+    public function get($key, mixed $default = null): mixed
     {
-        if ('' !== $name && 'complex' == $this->config['type']) {
-            return $this->connect($this->config[$name], strtolower($name));
-        }
-
-        return $this->init();
+        return $this->store()->get($key, $default);
     }
 
-    public function __call($method, $args)
+    /**
+     * 写入缓存
+     * @access public
+     * @param string                             $key   缓存变量名
+     * @param mixed                              $value 存储数据
+     * @param int|DateTimeInterface|DateInterval $ttl   有效时间 0为永久
+     * @return bool
+     */
+    public function set($key, $value, $ttl = null): bool
     {
-        return call_user_func_array([$this->init(), $method], $args);
+        return $this->store()->set($key, $value, $ttl);
+    }
+
+    /**
+     * 删除缓存
+     * @access public
+     * @param string $key 缓存变量名
+     * @return bool
+     */
+    public function delete($key): bool
+    {
+        return $this->store()->delete($key);
+    }
+
+    /**
+     * 读取缓存
+     * @access public
+     * @param iterable $keys    缓存变量名
+     * @param mixed    $default 默认值
+     * @return iterable
+     * @throws InvalidArgumentException
+     */
+    public function getMultiple($keys, $default = null): iterable
+    {
+        return $this->store()->getMultiple($keys, $default);
+    }
+
+    /**
+     * 写入缓存
+     * @access public
+     * @param iterable               $values 缓存数据
+     * @param null|int|\DateInterval $ttl    有效时间 0为永久
+     * @return bool
+     */
+    public function setMultiple($values, $ttl = null): bool
+    {
+        return $this->store()->setMultiple($values, $ttl);
+    }
+
+    /**
+     * 删除缓存
+     * @access public
+     * @param iterable $keys 缓存变量名
+     * @return bool
+     * @throws InvalidArgumentException
+     */
+    public function deleteMultiple($keys): bool
+    {
+        return $this->store()->deleteMultiple($keys);
+    }
+
+    /**
+     * 判断缓存是否存在
+     * @access public
+     * @param string $key 缓存变量名
+     * @return bool
+     */
+    public function has($key): bool
+    {
+        return $this->store()->has($key);
+    }
+
+    /**
+     * 缓存标签
+     * @access public
+     * @param string|array $name 标签名
+     * @return TagSet
+     */
+    public function tag($name)
+    {
+        return $this->store()->tag($name);
     }
 
 }

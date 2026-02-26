@@ -1,14 +1,33 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think;
 
-class Env
+use ArrayAccess;
+
+/**
+ * Env管理类
+ * @package think
+ */
+class Env implements ArrayAccess
 {
     /**
      * 环境变量数据
      * @var array
      */
     protected $data = [];
+
+    /**
+     * 数据转换映射
+     * @var array
+     */
+    protected $convert = [
+        'true'  => true,
+        'false' => false,
+        'off'   => false,
+        'on'    => true,
+    ];
 
     public function __construct()
     {
@@ -18,53 +37,52 @@ class Env
     /**
      * 读取环境变量定义文件
      * @access public
-     * @param  string    $file  环境变量定义文件
+     * @param string $file 环境变量定义文件
      * @return void
      */
-    public function load($file)
+    public function load(string $file): void
     {
-        $env = parse_ini_file($file, true);
+        $env = parse_ini_file($file, true, INI_SCANNER_RAW) ?: [];
         $this->set($env);
     }
 
     /**
      * 获取环境变量值
      * @access public
-     * @param  string    $name 环境变量名
-     * @param  mixed     $default  默认值
+     * @param string $name    环境变量名
+     * @param mixed  $default 默认值
      * @return mixed
      */
-    public function get($name = null, $default = null, $php_prefix = true)
+    public function get(?string $name = null, $default = null)
     {
         if (is_null($name)) {
             return $this->data;
         }
 
         $name = strtoupper(str_replace('.', '_', $name));
-
         if (isset($this->data[$name])) {
-            return $this->data[$name];
+            $result = $this->data[$name];
+
+            if (is_string($result) && isset($this->convert[$result])) {
+                return $this->convert[$result];
+            }
+
+            return $result;
         }
 
-        return $this->getEnv($name, $default, $php_prefix);
+        return $this->getEnv($name, $default);
     }
 
-    protected function getEnv($name, $default = null, $php_prefix = true)
+    protected function getEnv(string $name, $default = null)
     {
-        if ($php_prefix) {
-            $name = 'PHP_' . $name;
-        }
-
-        $result = getenv($name);
+        $result = getenv('PHP_' . $name);
 
         if (false === $result) {
             return $default;
         }
 
-        if ('false' === $result) {
-            $result = false;
-        } elseif ('true' === $result) {
-            $result = true;
+        if (isset($this->convert[$result])) {
+            $result = $this->convert[$result];
         }
 
         if (!isset($this->data[$name])) {
@@ -77,11 +95,11 @@ class Env
     /**
      * 设置环境变量值
      * @access public
-     * @param  string|array  $env   环境变量
-     * @param  mixed         $value  值
+     * @param string|array $env   环境变量
+     * @param mixed        $value 值
      * @return void
      */
-    public function set($env, $value = null)
+    public function set($env, $value = null): void
     {
         if (is_array($env)) {
             $env = array_change_key_case($env, CASE_UPPER);
@@ -89,7 +107,11 @@ class Env
             foreach ($env as $key => $val) {
                 if (is_array($val)) {
                     foreach ($val as $k => $v) {
-                        $this->data[$key . '_' . strtoupper($k)] = $v;
+                        if (is_string($k)) {
+                            $this->data[$key . '_' . strtoupper($k)] = $v;
+                        } else {
+                            $this->data[$key][$k] = $v;
+                        }
                     }
                 } else {
                     $this->data[$key] = $val;
@@ -100,5 +122,70 @@ class Env
 
             $this->data[$name] = $value;
         }
+    }
+
+    /**
+     * 检测是否存在环境变量
+     * @access public
+     * @param string $name 参数名
+     * @return bool
+     */
+    public function has(string $name): bool
+    {
+        return !is_null($this->get($name));
+    }
+
+    /**
+     * 设置环境变量
+     * @access public
+     * @param string $name  参数名
+     * @param mixed  $value 值
+     */
+    public function __set(string $name, $value): void
+    {
+        $this->set($name, $value);
+    }
+
+    /**
+     * 获取环境变量
+     * @access public
+     * @param string $name 参数名
+     * @return mixed
+     */
+    public function __get(string $name)
+    {
+        return $this->get($name);
+    }
+
+    /**
+     * 检测是否存在环境变量
+     * @access public
+     * @param string $name 参数名
+     * @return bool
+     */
+    public function __isset(string $name): bool
+    {
+        return $this->has($name);
+    }
+
+    // ArrayAccess
+    public function offsetSet(mixed $name, mixed $value): void
+    {
+        $this->set($name, $value);
+    }
+
+    public function offsetExists(mixed $name): bool
+    {
+        return $this->__isset($name);
+    }
+
+    public function offsetUnset(mixed $name): void
+    {
+        throw new Exception('not support: unset');
+    }
+
+    public function offsetGet(mixed $name): mixed
+    {
+        return $this->get($name);
     }
 }

@@ -1,17 +1,47 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\response;
 
+use think\Cookie;
 use think\Response;
+use think\View as BaseView;
 
+/**
+ * View Response
+ */
 class View extends Response
 {
-    // 输出参数
+    /**
+     * 输出参数
+     * @var array
+     */
     protected $options = [];
-    protected $vars    = [];
-    protected $config  = [];
+
+    /**
+     * 输出变量
+     * @var array
+     */
+    protected $vars = [];
+
+    /**
+     * 输出过滤
+     * @var mixed
+     */
     protected $filter;
+
+    /**
+     * 输出type
+     * @var string
+     */
     protected $contentType = 'text/html';
+
+    /**
+     * View对象
+     * @var BaseView
+     */
+    protected $view;
 
     /**
      * 是否内容渲染
@@ -19,18 +49,12 @@ class View extends Response
      */
     protected $isContent = false;
 
-    /**
-     * 处理数据
-     * @access protected
-     * @param  mixed $data 要处理的数据
-     * @return mixed
-     */
-    protected function output($data)
+    public function __construct(Cookie $cookie, BaseView $view, $data = '', int $code = 200)
     {
-        // 渲染模板输出
-        return $this->app['view']
-            ->filter($this->filter)
-            ->fetch($data, $this->vars, $this->config, $this->isContent);
+        $this->init($data, $code);
+
+        $this->cookie = $cookie;
+        $this->view   = $view;
     }
 
     /**
@@ -39,35 +63,50 @@ class View extends Response
      * @param  bool $content
      * @return $this
      */
-    public function isContent($content = true)
+    public function isContent(bool $content = true)
     {
         $this->isContent = $content;
         return $this;
     }
 
     /**
+     * 处理数据
+     * @access protected
+     * @param  mixed $data 要处理的数据
+     * @return string
+     */
+    protected function output($data): string
+    {
+        // 渲染模板输出
+        $this->view->filter($this->filter);
+        return $this->isContent ?
+            $this->view->display($data, $this->vars) :
+            $this->view->fetch($data, $this->vars);
+    }
+
+    /**
      * 获取视图变量
      * @access public
-     * @param  string $name 模板变量
+     * @param string|null $name 模板变量
      * @return mixed
      */
-    public function getVars($name = null)
+    public function getVars(?string $name = null)
     {
         if (is_null($name)) {
             return $this->vars;
         } else {
-            return isset($this->vars[$name]) ? $this->vars[$name] : null;
+            return $this->vars[$name] ?? null;
         }
     }
 
     /**
      * 模板变量赋值
      * @access public
-     * @param  mixed $name  变量名
-     * @param  mixed $value 变量值
+     * @param  string|array $name  模板变量
+     * @param  mixed        $value 变量值
      * @return $this
      */
-    public function assign($name, $value = '')
+    public function assign(string|array $name, $value = null)
     {
         if (is_array($name)) {
             $this->vars = array_merge($this->vars, $name);
@@ -78,19 +117,13 @@ class View extends Response
         return $this;
     }
 
-    public function config($config)
-    {
-        $this->config = $config;
-        return $this;
-    }
-
     /**
      * 视图内容过滤
      * @access public
-     * @param callable $filter
+     * @param callable|null $filter
      * @return $this
      */
-    public function filter($filter)
+    public function filter(?callable $filter = null)
     {
         $this->filter = $filter;
         return $this;
@@ -98,13 +131,12 @@ class View extends Response
 
     /**
      * 检查模板是否存在
-     * @access private
-     * @param  string|array  $name 参数名
+     * @access public
+     * @param  string  $name 模板名
      * @return bool
      */
-    public function exists($name)
+    public function exists(string $name): bool
     {
-        return $this->app['view']->exists($name);
+        return $this->view->exists($name);
     }
-
 }

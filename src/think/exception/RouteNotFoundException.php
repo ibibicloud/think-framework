@@ -1,7 +1,12 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\exception;
 
+/**
+ * 路由未定义异常
+ */
 class RouteNotFoundException extends HttpException
 {
 

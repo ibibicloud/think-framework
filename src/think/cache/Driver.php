@@ -1,13 +1,24 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\cache;
 
+use Closure;
+use DateInterval;
+use DateTime;
+use DateTimeInterface;
+use Exception;
 use think\Container;
+use think\contract\CacheHandlerInterface;
+use think\exception\InvalidArgumentException;
+use think\exception\InvalidCacheException;
+use Throwable;
 
 /**
  * 缓存基础类
  */
-abstract class Driver
+abstract class Driver implements CacheHandlerInterface
 {
     /**
      * 驱动句柄
@@ -17,13 +28,13 @@ abstract class Driver
 
     /**
      * 缓存读取次数
-     * @var integer
+     * @var int
      */
     protected $readTimes = 0;
 
     /**
      * 缓存写入次数
-     * @var integer
+     * @var int
      */
     protected $writeTimes = 0;
 
@@ -35,87 +46,24 @@ abstract class Driver
 
     /**
      * 缓存标签
-     * @var string
-     */
-    protected $tag;
-
-    /**
-     * 序列化方法
      * @var array
      */
-    protected static $serialize = ['serialize', 'unserialize', 'think_serialize:', 16];
-
-    /**
-     * 判断缓存是否存在
-     * @access public
-     * @param  string $name 缓存变量名
-     * @return bool
-     */
-    abstract public function has($name);
-
-    /**
-     * 读取缓存
-     * @access public
-     * @param  string $name 缓存变量名
-     * @param  mixed  $default 默认值
-     * @return mixed
-     */
-    abstract public function get($name, $default = false);
-
-    /**
-     * 写入缓存
-     * @access public
-     * @param  string    $name 缓存变量名
-     * @param  mixed     $value  存储数据
-     * @param  int       $expire  有效时间 0为永久
-     * @return boolean
-     */
-    abstract public function set($name, $value, $expire = null);
-
-    /**
-     * 自增缓存（针对数值缓存）
-     * @access public
-     * @param  string    $name 缓存变量名
-     * @param  int       $step 步长
-     * @return false|int
-     */
-    abstract public function inc($name, $step = 1);
-
-    /**
-     * 自减缓存（针对数值缓存）
-     * @access public
-     * @param  string    $name 缓存变量名
-     * @param  int       $step 步长
-     * @return false|int
-     */
-    abstract public function dec($name, $step = 1);
-
-    /**
-     * 删除缓存
-     * @access public
-     * @param  string $name 缓存变量名
-     * @return boolean
-     */
-    abstract public function rm($name);
-
-    /**
-     * 清除缓存
-     * @access public
-     * @param  string $tag 标签名
-     * @return boolean
-     */
-    abstract public function clear($tag = null);
+    protected $tag = [];
 
     /**
      * 获取有效期
      * @access protected
-     * @param  integer|\DateTime $expire 有效期
-     * @return integer
+     * @param int|DateInterval|DateTimeInterface $expire 有效期
+     * @return int
      */
-    protected function getExpireTime($expire)
+    protected function getExpireTime(int | DateInterval | DateTimeInterface $expire): int
     {
-        if ($expire instanceof \DateTime) {
+        if ($expire instanceof DateTimeInterface) {
             $expire = $expire->getTimestamp() - time();
+        } elseif ($expire instanceof DateInterval) {
+            $expire = DateTime::createFromFormat('U', (string) time())
+                ->add($expire)
+                ->format('U') - time();
         }
 
         return $expire;
@@ -123,11 +71,11 @@ abstract class Driver
 
     /**
      * 获取实际的缓存标识
-     * @access protected
-     * @param  string $name 缓存名
+     * @access public
+     * @param string $name 缓存名
      * @return string
      */
-    protected function getCacheKey($name)
+    public function getCacheKey(string $name): string
     {
         return $this->options['prefix'] . $name;
     }
@@ -135,61 +83,98 @@ abstract class Driver
     /**
      * 读取缓存并删除
      * @access public
-     * @param  string $name 缓存变量名
+     * @param string $name 缓存变量名
+     * @param mixed  $default 默认值
      * @return mixed
      */
-    public function pull($name)
+    public function pull($name, $default = null)
     {
-        $result = $this->get($name, false);
-
-        if ($result) {
-            $this->rm($name);
+        if ($this->has($name)) {
+            $result = $this->get($name, $default);
+            $this->delete($name);
             return $result;
-        } else {
-            return;
         }
+        return $this->getDefaultValue($name, $default);
+    }
+
+    /**
+     * 追加（数组）缓存
+     * @access public
+     * @param string $name  缓存变量名
+     * @param mixed  $value 存储数据
+     * @return void
+     */
+    public function push($name, $value): void
+    {
+        $item = $this->get($name, []);
+
+        if (!is_array($item)) {
+            throw new InvalidArgumentException('only array cache can be push');
+        }
+
+        $item[] = $value;
+
+        if (count($item) > 1000) {
+            array_shift($item);
+        }
+
+        $item = array_unique($item);
+
+        $this->set($name, $item);
+    }
+
+    /**
+     * 追加TagSet数据
+     * @access public
+     * @param string $name  缓存变量名
+     * @param mixed  $value 存储数据
+     * @return void
+     */
+    public function append($name, $value): void
+    {
+        $this->push($name, $value);
     }
 
     /**
      * 如果不存在则写入缓存
      * @access public
-     * @param  string    $name 缓存变量名
-     * @param  mixed     $value  存储数据
-     * @param  int       $expire  有效时间 0为永久
+     * @param string                             $name   缓存变量名
+     * @param mixed                              $value  存储数据
+     * @param int|DateInterval|DateTimeInterface $expire 有效时间 0为永久
      * @return mixed
      */
     public function remember($name, $value, $expire = null)
     {
-        if (!$this->has($name)) {
-            $time = time();
-            while ($time + 5 > time() && $this->has($name . '_lock')) {
-                // 存在锁定则等待
-                usleep(200000);
+        if ($this->has($name)) {
+            if (($hit = $this->get($name)) !== null) {
+                return $hit;
+            }
+        }
+
+        $time = time();
+
+        while ($time + 5 > time() && $this->has($name . '_lock')) {
+            // 存在锁定则等待
+            usleep(200000);
+        }
+
+        try {
+            // 锁定
+            $this->set($name . '_lock', true);
+
+            if ($value instanceof Closure) {
+                // 获取缓存数据
+                $value = Container::getInstance()->invokeFunction($value);
             }
 
-            try {
-                // 锁定
-                $this->set($name . '_lock', true);
+            // 缓存数据
+            $this->set($name, $value, $expire);
 
-                if ($value instanceof \Closure) {
-                    // 获取缓存数据
-                    $value = Container::getInstance()->invokeFunction($value);
-                }
-
-                // 缓存数据
-                $this->set($name, $value, $expire);
-
-                // 解锁
-                $this->rm($name . '_lock');
-            } catch (\Exception $e) {
-                $this->rm($name . '_lock');
-                throw $e;
-            } catch (\throwable $e) {
-                $this->rm($name . '_lock');
-                throw $e;
-            }
-        } else {
-            $value = $this->get($name);
+            // 解锁
+            $this->delete($name . '_lock');
+        } catch (Exception | Throwable $e) {
+            $this->delete($name . '_lock');
+            throw $e;
         }
 
         return $value;
@@ -198,135 +183,99 @@ abstract class Driver
     /**
      * 缓存标签
      * @access public
-     * @param  string        $name 标签名
-     * @param  string|array  $keys 缓存标识
-     * @param  bool          $overlay 是否覆盖
-     * @return $this
+     * @param string|array $name 标签名
+     * @return TagSet
      */
-    public function tag($name, $keys = null, $overlay = false)
+    public function tag($name)
     {
-        if (is_null($name)) {
+        $name = (array) $name;
+        $key  = implode('-', $name);
 
-        } elseif (is_null($keys)) {
-            $this->tag = $name;
-        } else {
-            $key = $this->getTagkey($name);
-
-            if (is_string($keys)) {
-                $keys = explode(',', $keys);
-            }
-
-            $keys = array_map([$this, 'getCacheKey'], $keys);
-
-            if ($overlay) {
-                $value = $keys;
-            } else {
-                $value = array_unique(array_merge($this->getTagItem($name), $keys));
-            }
-
-            $this->set($key, implode(',', $value), 0);
+        if (!isset($this->tag[$key])) {
+            $this->tag[$key] = new TagSet($name, $this);
         }
 
-        return $this;
-    }
-
-    /**
-     * 更新标签
-     * @access protected
-     * @param  string $name 缓存标识
-     * @return void
-     */
-    protected function setTagItem($name)
-    {
-        if ($this->tag) {
-            $key       = $this->getTagkey($this->tag);
-            $this->tag = null;
-
-            if ($this->has($key)) {
-                $value   = explode(',', $this->get($key));
-                $value[] = $name;
-
-                if (count($value) > 1000) {
-                    array_shift($value);
-                }
-
-                $value = implode(',', array_unique($value));
-            } else {
-                $value = $name;
-            }
-
-            $this->set($key, $value, 0);
-        }
+        return $this->tag[$key];
     }
 
     /**
      * 获取标签包含的缓存标识
-     * @access protected
-     * @param  string $tag 缓存标签
+     * @access public
+     * @param string $tag 标签标识
      * @return array
      */
-    protected function getTagItem($tag)
+    public function getTagItems(string $tag): array
     {
-        $key   = $this->getTagkey($tag);
-        $value = $this->get($key);
-
-        if ($value) {
-            return array_filter(explode(',', $value));
-        } else {
-            return [];
-        }
+        $name = $this->getTagKey($tag);
+        return $this->get($name, []);
     }
 
-    protected function getTagKey($tag)
+    /**
+     * 获取实际标签名
+     * @access public
+     * @param string $tag 标签名
+     * @return string
+     */
+    public function getTagKey(string $tag): string
     {
-        return 'tag_' . md5($tag);
+        return $this->options['tag_prefix'] . md5($tag);
     }
 
     /**
      * 序列化数据
      * @access protected
-     * @param  mixed $data
+     * @param mixed $data 缓存数据
      * @return string
      */
     protected function serialize($data)
     {
-        if (is_scalar($data) || !$this->options['serialize']) {
+        if (is_numeric($data)) {
             return $data;
         }
 
-        $serialize = self::$serialize[0];
+        $serialize = $this->options['serialize'][0] ?? "serialize";
 
-        return self::$serialize[2] . $serialize($data);
+        return $serialize($data);
     }
 
     /**
      * 反序列化数据
      * @access protected
-     * @param  string $data
+     * @param string $data 缓存数据
      * @return mixed
      */
     protected function unserialize($data)
     {
-        if ($this->options['serialize'] && 0 === strpos($data, self::$serialize[2])) {
-            $unserialize = self::$serialize[1];
-
-            return $unserialize(substr($data, self::$serialize[3]));
-        } else {
+        if (is_numeric($data)) {
             return $data;
+        }
+        try {
+            $unserialize = $this->options['serialize'][1] ?? "unserialize";
+            $content     = $unserialize($data);
+            if (is_null($content)) {
+                throw new InvalidCacheException;
+            } else {
+                return $content;
+            }
+        } catch (Exception | Throwable $e) {
+            throw new InvalidCacheException;
         }
     }
 
     /**
-     * 注册序列化机制
-     * @access public
-     * @param  callable $serialize      序列化方法
-     * @param  callable $unserialize    反序列化方法
-     * @param  string   $prefix         序列化前缀标识
-     * @return $this
+     * 获取默认值
+     * @access protected
+     * @param string $name 缓存标识
+     * @param mixed $default 默认值
+     * @param bool $fail 是否有异常
+     * @return mixed
      */
-    public static function registerSerialize($serialize, $unserialize, $prefix = 'think_serialize:')
+    protected function getDefaultValue($name, $default, $fail = false)
     {
-        self::$serialize = [$serialize, $unserialize, $prefix, strlen($prefix)];
+        if ($fail && $this->options['fail_delete']) {
+            $this->delete($name);
+        }
+        return $default instanceof Closure ? $default() : $default;
     }
 
     /**
@@ -340,14 +289,85 @@ abstract class Driver
         return $this->handler;
     }
 
-    public function getReadTimes()
+    /**
+     * 返回缓存读取次数
+     * @return int
+     * @deprecated
+     * @access public
+     */
+    public function getReadTimes(): int
     {
         return $this->readTimes;
     }
 
-    public function getWriteTimes()
+    /**
+     * 返回缓存写入次数
+     * @return int
+     * @deprecated
+     * @access public
+     */
+    public function getWriteTimes(): int
     {
         return $this->writeTimes;
+    }
+
+    /**
+     * 读取缓存
+     * @access public
+     * @param iterable $keys    缓存变量名
+     * @param mixed    $default 默认值
+     * @return iterable
+     * @throws InvalidArgumentException
+     */
+    public function getMultiple($keys, $default = null): iterable
+    {
+        $result = [];
+
+        foreach ($keys as $key) {
+            $result[$key] = $this->get($key, $default);
+        }
+
+        return $result;
+    }
+
+    /**
+     * 写入缓存
+     * @access public
+     * @param iterable                                 $values 缓存数据
+     * @param null|int|\DateInterval|DateTimeInterface $ttl    有效时间 0为永久
+     * @return bool
+     */
+    public function setMultiple($values, $ttl = null): bool
+    {
+        foreach ($values as $key => $val) {
+            $result = $this->set($key, $val, $ttl);
+
+            if (false === $result) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * 删除缓存
+     * @access public
+     * @param iterable $keys 缓存变量名
+     * @return bool
+     * @throws InvalidArgumentException
+     */
+    public function deleteMultiple($keys): bool
+    {
+        foreach ($keys as $key) {
+            $result = $this->delete($key);
+
+            if (false === $result) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function __call($method, $args)

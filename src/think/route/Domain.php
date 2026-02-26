@@ -1,15 +1,16 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\route;
 
-use think\Container;
-use think\Loader;
-use think\Request;
+use Closure;
 use think\Route;
-use think\route\dispatch\Callback as CallbackDispatch;
-use think\route\dispatch\Controller as ControllerDispatch;
-use think\route\dispatch\Module as ModuleDispatch;
+use think\Container;
 
+/**
+ * 域名路由
+ */
 class Domain extends RuleGroup
 {
     /**
@@ -18,211 +19,58 @@ class Domain extends RuleGroup
      * @param  Route       $router   路由对象
      * @param  string      $name     路由域名
      * @param  mixed       $rule     域名路由
-     * @param  array       $option   路由参数
-     * @param  array       $pattern  变量规则
+     * @param  bool        $lazy   延迟解析
      */
-    public function __construct(Route $router, $name = '', $rule = null, $option = [], $pattern = [])
+    public function __construct(Route $router, ?string $name = null, $rule = null, bool $lazy = false)
     {
-        $this->router  = $router;
-        $this->domain  = $name;
-        $this->option  = $option;
-        $this->rule    = $rule;
-        $this->pattern = $pattern;
+        $this->router = $router;
+        $this->domain = $name;
+        $this->rule   = $rule;
+
+        if (!$lazy && !is_null($rule)) {
+            $this->parseGroupRule($rule);
+        }
     }
 
     /**
-     * 检测域名路由
+     * 解析分组和域名的路由规则及绑定
      * @access public
-     * @param  Request      $request  请求对象
-     * @param  string       $url      访问地址
-     * @param  bool         $completeMatch   路由是否完全匹配
-     * @return Dispatch|false
+     * @param  mixed $rule 路由规则
+     * @return void
      */
-    public function check($request, $url, $completeMatch = false)
+    public function parseGroupRule($rule): void
     {
-        // 检测别名路由
-        $result = $this->checkRouteAlias($request, $url);
+        $origin = $this->router->getGroup();
+        $this->router->setGroup($this);
 
-        if (false !== $result) {
-            return $result;
+        if ($rule instanceof Closure) {
+            Container::getInstance()->invokeFunction($rule);
+        } elseif ($this->config('route_auto_group')) {
+            $this->loadGroupRoutes();
         }
 
-        // 检测URL绑定
-        $result = $this->checkUrlBind($request, $url);
-
-        if (!empty($this->option['append'])) {
-            $request->setRouteVars($this->option['append']);
-            unset($this->option['append']);
-        }
-
-        if (false !== $result) {
-            return $result;
-        }
-
-        // 添加域名中间件
-        if (!empty($this->option['middleware'])) {
-            Container::get('middleware')->import($this->option['middleware']);
-            unset($this->option['middleware']);
-        }
-
-        return parent::check($request, $url, $completeMatch);
+        $this->router->setGroup($origin);
+        $this->hasParsed = true;
     }
 
     /**
-     * 设置路由绑定
-     * @access public
-     * @param  string     $bind 绑定信息
-     * @return $this
+     * 自动加载分组（子目录）路由
+     * @access protected
+     * @param  string  $dir 目录名
+     * @return void
      */
-    public function bind($bind)
+    protected function loadGroupRoutes(): void
     {
-        $this->router->bind($bind, $this->domain);
-        return $this;
-    }
-
-    /**
-     * 检测路由别名
-     * @access private
-     * @param  Request   $request
-     * @param  string    $url URL地址
-     * @return Dispatch|false
-     */
-    private function checkRouteAlias($request, $url)
-    {
-        $alias = strpos($url, '|') ? strstr($url, '|', true) : $url;
-
-        $item = $this->router->getAlias($alias);
-
-        return $item ? $item->check($request, $url) : false;
-    }
-
-    /**
-     * 检测URL绑定
-     * @access private
-     * @param  Request   $request
-     * @param  string    $url URL地址
-     * @return Dispatch|false
-     */
-    private function checkUrlBind($request, $url)
-    {
-        $bind = $this->router->getBind($this->domain);
-
-        if (!empty($bind)) {
-            $this->parseBindAppendParam($bind);
-
-            // 记录绑定信息
-            Container::get('app')->log('[ BIND ] ' . var_export($bind, true));
-
-            // 如果有URL绑定 则进行绑定检测
-            $type = substr($bind, 0, 1);
-            $bind = substr($bind, 1);
-
-            $bindTo = [
-                '\\' => 'bindToClass',
-                '@'  => 'bindToController',
-                ':'  => 'bindToNamespace',
-            ];
-
-            if (isset($bindTo[$type])) {
-                return $this->{$bindTo[$type]}($request, $url, $bind);
+        $routePath = root_path('route');
+        if (is_dir($routePath)) {
+            $dirs = glob($routePath . '*', GLOB_ONLYDIR);
+            foreach ($dirs as $dir) {
+                // 自动检查分组子目录
+                $groupName = str_replace('\\', '/', substr_replace($dir, '', 0, strlen($routePath)));
+                if (!$this->router->getRuleName()->hasGroup($groupName)) {
+                    $this->router->group($groupName);
+                }
             }
         }
-
-        return false;
     }
-
-    protected function parseBindAppendParam(&$bind)
-    {
-        if (false !== strpos($bind, '?')) {
-            list($bind, $query) = explode('?', $bind);
-            parse_str($query, $vars);
-            $this->append($vars);
-        }
-    }
-
-    /**
-     * 绑定到类
-     * @access protected
-     * @param  Request   $request
-     * @param  string    $url URL地址
-     * @param  string    $class 类名（带命名空间）
-     * @return CallbackDispatch
-     */
-    protected function bindToClass($request, $url, $class)
-    {
-        $array  = explode('|', $url, 2);
-        $action = !empty($array[0]) ? $array[0] : $this->router->config('default_action');
-        $param  = [];
-
-        if (!empty($array[1])) {
-            $this->parseUrlParams($request, $array[1], $param);
-        }
-
-        return new CallbackDispatch($request, $this, [$class, $action], $param);
-    }
-
-    /**
-     * 绑定到命名空间
-     * @access protected
-     * @param  Request   $request
-     * @param  string    $url URL地址
-     * @param  string    $namespace 命名空间
-     * @return CallbackDispatch
-     */
-    protected function bindToNamespace($request, $url, $namespace)
-    {
-        $array  = explode('|', $url, 3);
-        $class  = !empty($array[0]) ? $array[0] : $this->router->config('default_controller');
-        $method = !empty($array[1]) ? $array[1] : $this->router->config('default_action');
-        $param  = [];
-
-        if (!empty($array[2])) {
-            $this->parseUrlParams($request, $array[2], $param);
-        }
-
-        return new CallbackDispatch($request, $this, [$namespace . '\\' . Loader::parseName($class, 1), $method], $param);
-    }
-
-    /**
-     * 绑定到控制器类
-     * @access protected
-     * @param  Request   $request
-     * @param  string    $url URL地址
-     * @param  string    $controller 控制器名 （支持带模块名 index/user ）
-     * @return ControllerDispatch
-     */
-    protected function bindToController($request, $url, $controller)
-    {
-        $array  = explode('|', $url, 2);
-        $action = !empty($array[0]) ? $array[0] : $this->router->config('default_action');
-        $param  = [];
-
-        if (!empty($array[1])) {
-            $this->parseUrlParams($request, $array[1], $param);
-        }
-
-        return new ControllerDispatch($request, $this, $controller . '/' . $action, $param);
-    }
-
-    /**
-     * 绑定到模块/控制器
-     * @access protected
-     * @param  Request   $request
-     * @param  string    $url URL地址
-     * @param  string    $controller 控制器类名（带命名空间）
-     * @return ModuleDispatch
-     */
-    protected function bindToModule($request, $url, $controller)
-    {
-        $array  = explode('|', $url, 2);
-        $action = !empty($array[0]) ? $array[0] : $this->router->config('default_action');
-        $param  = [];
-
-        if (!empty($array[1])) {
-            $this->parseUrlParams($request, $array[1], $param);
-        }
-
-        return new ModuleDispatch($request, $this, $controller . '/' . $action, $param);
-    }
-
 }

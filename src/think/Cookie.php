@@ -1,7 +1,15 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think;
 
+use DateTimeInterface;
+
+/**
+ * Cookie管理类
+ * @package think
+ */
 class Cookie
 {
     /**
@@ -9,83 +17,72 @@ class Cookie
      * @var array
      */
     protected $config = [
-        // cookie 名称前缀
-        'prefix'    => '',
-        // cookie 保存时间
-        'expire'    => 0,
-        // cookie 保存路径
-        'path'      => '/',
-        // cookie 有效域名
-        'domain'    => '',
-        //  cookie 启用安全传输
-        'secure'    => false,
-        // httponly设置
-        'httponly'  => false,
-        // 是否使用 setcookie
-        'setcookie' => true,
+        'expire'   => 0,        // cookie 保存时间
+        'path'     => '/',      // cookie 保存路径
+        'domain'   => '',       // cookie 有效域名
+        'secure'   => false,    // cookie 启用安全传输
+        'httponly' => false,    // httponly设置
+        'samesite' => '',       // samesite 设置，支持 'strict' 'lax'
     ];
+
+    /**
+     * Cookie写入数据
+     * @var array
+     */
+    protected $cookie = [];
 
     /**
      * 构造方法
      * @access public
      */
-    public function __construct(array $config = [])
-    {
-        $this->init($config);
-    }
-
-    /**
-     * Cookie初始化
-     * @access public
-     * @param  array $config
-     * @return void
-     */
-    public function init(array $config = [])
+    public function __construct(protected Request $request, array $config = [])
     {
         $this->config = array_merge($this->config, array_change_key_case($config));
-
-        if (!empty($this->config['httponly']) && PHP_SESSION_ACTIVE != session_status()) {
-            ini_set('session.cookie_httponly', 1);
-        }
     }
 
-    public static function __make(Config $config)
+    public static function __make(Request $request, Config $config)
     {
-        return new static($config->pull('cookie'));
+        return new static($request, $config->get('cookie'));
     }
 
     /**
-     * 设置或者获取cookie作用域（前缀）
+     * 获取cookie
      * @access public
-     * @param  string $prefix
-     * @return string|void
+     * @param  mixed  $name 数据名称
+     * @param  string $default 默认值
+     * @return mixed
      */
-    public function prefix($prefix = '')
+    public function get(string $name = '', $default = null)
     {
-        if (empty($prefix)) {
-            return $this->config['prefix'];
-        }
-
-        $this->config['prefix'] = $prefix;
+        return $this->request->cookie($name, $default);
     }
 
     /**
-     * Cookie 设置、获取、删除
+     * 是否存在Cookie参数
+     * @access public
+     * @param  string $name 变量名
+     * @return bool
+     */
+    public function has(string $name): bool
+    {
+        return $this->request->has($name, 'cookie');
+    }
+
+    /**
+     * Cookie 设置
      *
      * @access public
      * @param  string $name  cookie名称
-     * @param  mixed  $value cookie值
-     * @param  mixed  $option 可选参数 可能会是 null|integer|string
+     * @param  string $value cookie值
+     * @param  mixed  $option 可选参数
      * @return void
      */
-    public function set($name, $value = '', $option = null)
+    public function set(string $name, string $value, $option = null): void
     {
         // 参数设置(会覆盖黙认设置)
         if (!is_null($option)) {
-            if (is_numeric($option)) {
+            if (is_numeric($option) || $option instanceof DateTimeInterface) {
                 $option = ['expire' => $option];
-            } elseif (is_string($option)) {
-                parse_str($option, $option);
             }
 
             $config = array_merge($this->config, array_change_key_case($option));
@@ -93,46 +90,40 @@ class Cookie
             $config = $this->config;
         }
 
-        $name = $config['prefix'] . $name;
-
-        // 设置cookie
-        if (is_array($value)) {
-            array_walk_recursive($value, [$this, 'jsonFormatProtect'], 'encode');
-            $value = 'think:' . json_encode($value);
+        if ($config['expire'] instanceof DateTimeInterface) {
+            $expire = $config['expire']->getTimestamp();
+        } else {
+            $expire = !empty($config['expire']) ? time() + intval($config['expire']) : 0;
         }
 
-        $expire = !empty($config['expire']) ? $_SERVER['REQUEST_TIME'] + intval($config['expire']) : 0;
-
-        if ($config['setcookie']) {
-            $this->setCookie($name, $value, $expire, $config);
-        }
-
-        $_COOKIE[$name] = $value;
+        $this->setCookie($name, $value, $expire, $config);
+        $this->request->setCookie($name, $value);
     }
 
     /**
-     * Cookie 设置保存
+     * Cookie 保存
      *
      * @access public
      * @param  string $name  cookie名称
-     * @param  mixed  $value cookie值
+     * @param  string $value cookie值
+     * @param  int    $expire 有效期
      * @param  array  $option 可选参数
      * @return void
      */
-    protected function setCookie($name, $value, $expire, $option = [])
+    protected function setCookie(string $name, string $value, int $expire, array $option = []): void
     {
-        setcookie($name, $value, $expire, $option['path'], $option['domain'], $option['secure'], $option['httponly']);
+        $this->cookie[$name] = [$value, $expire, $option];
     }
 
     /**
      * 永久保存Cookie数据
      * @access public
      * @param  string $name  cookie名称
-     * @param  mixed  $value cookie值
-     * @param  mixed  $option 可选参数 可能会是 null|integer|string
+     * @param  string $value cookie值
+     * @param  mixed  $option 可选参数 可能会是 null|int|string
      * @return void
      */
-    public function forever($name, $value = '', $option = null)
+    public function forever(string $name, string $value = '', $option = null): void
     {
         if (is_null($option) || is_numeric($option)) {
             $option = [];
@@ -144,116 +135,74 @@ class Cookie
     }
 
     /**
-     * 判断Cookie数据
-     * @access public
-     * @param  string        $name cookie名称
-     * @param  string|null   $prefix cookie前缀
-     * @return bool
-     */
-    public function has($name, $prefix = null)
-    {
-        $prefix = !is_null($prefix) ? $prefix : $this->config['prefix'];
-        $name   = $prefix . $name;
-
-        return isset($_COOKIE[$name]);
-    }
-
-    /**
-     * Cookie获取
-     * @access public
-     * @param  string        $name cookie名称 留空获取全部
-     * @param  string|null   $prefix cookie前缀
-     * @return mixed
-     */
-    public function get($name = '', $prefix = null)
-    {
-        $prefix = !is_null($prefix) ? $prefix : $this->config['prefix'];
-        $key    = $prefix . $name;
-
-        if ('' == $name) {
-            if ($prefix) {
-                $value = [];
-                foreach ($_COOKIE as $k => $val) {
-                    if (0 === strpos($k, $prefix)) {
-                        $value[$k] = $val;
-                    }
-                }
-            } else {
-                $value = $_COOKIE;
-            }
-        } elseif (isset($_COOKIE[$key])) {
-            $value = $_COOKIE[$key];
-
-            if (0 === strpos($value, 'think:')) {
-                $value = substr($value, 6);
-                $value = json_decode($value, true);
-                array_walk_recursive($value, [$this, 'jsonFormatProtect'], 'decode');
-            }
-        } else {
-            $value = null;
-        }
-
-        return $value;
-    }
-
-    /**
      * Cookie删除
      * @access public
-     * @param  string        $name cookie名称
-     * @param  string|null   $prefix cookie前缀
+     * @param  string $name cookie名称
+     * @param  array  $options cookie参数
      * @return void
      */
-    public function delete($name, $prefix = null)
+    public function delete(string $name, array $options = []): void
     {
-        $config = $this->config;
-        $prefix = !is_null($prefix) ? $prefix : $config['prefix'];
-        $name   = $prefix . $name;
-
-        if ($config['setcookie']) {
-            $this->setcookie($name, '', $_SERVER['REQUEST_TIME'] - 3600, $config);
-        }
-
-        // 删除指定cookie
-        unset($_COOKIE[$name]);
+        $config = array_merge($this->config, array_change_key_case($options));
+        $this->setCookie($name, '', time() - 3600, $config);
+        $this->request->setCookie($name, null);
     }
 
     /**
-     * Cookie清空
+     * 获取cookie保存数据
      * @access public
-     * @param  string|null $prefix cookie前缀
+     * @return array
+     */
+    public function getCookie(): array
+    {
+        return $this->cookie;
+    }
+
+    /**
+     * 保存Cookie
+     * @access public
      * @return void
      */
-    public function clear($prefix = null)
+    public function save(): void
     {
-        // 清除指定前缀的所有cookie
-        if (empty($_COOKIE)) {
-            return;
-        }
+        foreach ($this->cookie as $name => $val) {
+            [$value, $expire, $option] = $val;
 
-        // 要删除的cookie前缀，不指定则删除config设置的指定前缀
-        $config = $this->config;
-        $prefix = !is_null($prefix) ? $prefix : $config['prefix'];
-
-        if ($prefix) {
-            // 如果前缀为空字符串将不作处理直接返回
-            foreach ($_COOKIE as $key => $val) {
-                if (0 === strpos($key, $prefix)) {
-                    if ($config['setcookie']) {
-                        $this->setcookie($key, '', $_SERVER['REQUEST_TIME'] - 3600, $config);
-                    }
-                    unset($_COOKIE[$key]);
-                }
-            }
-        }
-
-        return;
-    }
-
-    private function jsonFormatProtect(&$val, $key, $type = 'encode')
-    {
-        if (!empty($val) && true !== $val) {
-            $val = 'decode' == $type ? urldecode($val) : urlencode($val);
+            $this->saveCookie(
+                (string) $name,
+                $value,
+                $expire,
+                $option['path'],
+                $option['domain'],
+                (bool) $option['secure'],
+                (bool) $option['httponly'],
+                $option['samesite'],
+            );
         }
     }
 
+    /**
+     * 保存Cookie
+     * @access public
+     * @param  string $name cookie名称
+     * @param  string $value cookie值
+     * @param  int    $expire cookie过期时间
+     * @param  string $path 有效的服务器路径
+     * @param  string $domain 有效域名/子域名
+     * @param  bool   $secure 是否仅仅通过HTTPS
+     * @param  bool   $httponly 仅可通过HTTP访问
+     * @param  string $samesite 防止CSRF攻击和用户追踪
+     * @return void
+     */
+    protected function saveCookie(string $name, string $value, int $expire, string $path, string $domain, bool $secure, bool $httponly, string $samesite): void
+    {
+        setcookie($name, $value, [
+            'expires'  => $expire,
+            'path'     => $path,
+            'domain'   => $domain,
+            'secure'   => $secure,
+            'httponly' => $httponly,
+            'samesite' => $samesite,
+        ]);
+    }
 }

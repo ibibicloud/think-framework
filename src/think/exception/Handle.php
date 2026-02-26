@@ -1,60 +1,78 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\exception;
 
 use Exception;
+use think\App;
 use think\console\Output;
-use think\Container;
+use think\db\exception\DataNotFoundException;
+use think\db\exception\ModelNotFoundException;
+use think\Request;
 use think\Response;
+use Throwable;
 
+/**
+ * 系统异常处理类
+ */
 class Handle
 {
-    protected $render;
     protected $ignoreReport = [
-        '\\think\\exception\\HttpException',
+        HttpException::class,
+        HttpResponseException::class,
+        ModelNotFoundException::class,
+        DataNotFoundException::class,
+        ValidateException::class,
     ];
 
-    public function setRender($render)
+    protected $showErrorMsg = [
+
+    ];
+
+    public function __construct(protected App $app)
     {
-        $this->render = $render;
     }
 
     /**
      * Report or log an exception.
      *
      * @access public
-     * @param  \Exception $exception
+     * @param Throwable $exception
      * @return void
      */
-    public function report(Exception $exception)
+    public function report(Throwable $exception): void
     {
         if (!$this->isIgnoreReport($exception)) {
             // 收集异常数据
-            if (Container::get('app')->isDebug()) {
+            if ($this->app->isDebug()) {
                 $data = [
                     'file'    => $exception->getFile(),
                     'line'    => $exception->getLine(),
                     'message' => $this->getMessage($exception),
                     'code'    => $this->getCode($exception),
                 ];
-                $log = "[{$data['code']}]{$data['message']}[{$data['file']}:{$data['line']}]";
+                $log  = "[{$data['code']}]{$data['message']}[{$data['file']}:{$data['line']}]";
             } else {
                 $data = [
                     'code'    => $this->getCode($exception),
                     'message' => $this->getMessage($exception),
                 ];
-                $log = "[{$data['code']}]{$data['message']}";
+                $log  = "[{$data['code']}]{$data['message']}";
             }
 
-            if (Container::get('app')->config('log.record_trace')) {
-                $log .= "\r\n" . $exception->getTraceAsString();
+            if ($this->app->config->get('log.record_trace')) {
+                $log .= PHP_EOL . $exception->getTraceAsString();
             }
 
-            Container::get('log')->record($log, 'error');
+            try {
+                $this->app->log->record($log, 'error');
+            } catch (Exception $e) {
+            }
         }
     }
 
-    protected function isIgnoreReport(Exception $exception)
+    protected function isIgnoreReport(Throwable $exception): bool
     {
         foreach ($this->ignoreReport as $class) {
             if ($exception instanceof $class) {
@@ -69,34 +87,29 @@ class Handle
      * Render an exception into an HTTP response.
      *
      * @access public
-     * @param  \Exception $e
+     * @param Request   $request
+     * @param Throwable $e
      * @return Response
      */
-    public function render(Exception $e)
+    public function render(Request $request, Throwable $e): Response
     {
-        if ($this->render && $this->render instanceof \Closure) {
-            $result = call_user_func_array($this->render, [$e]);
-
-            if ($result) {
-                return $result;
-            }
-        }
-
-        if ($e instanceof HttpException) {
-            return $this->renderHttpException($e);
+        if ($e instanceof HttpResponseException) {
+            return $e->getResponse();
+        } elseif ($e instanceof HttpException) {
+            return $this->renderHttpException($request, $e);
         } else {
-            return $this->convertExceptionToResponse($e);
+            return $this->convertExceptionToResponse($request, $e);
         }
     }
 
     /**
      * @access public
-     * @param  Output    $output
-     * @param  Exception $e
+     * @param Output    $output
+     * @param Throwable $e
      */
-    public function renderForConsole(Output $output, Exception $e)
+    public function renderForConsole(Output $output, Throwable $e): void
     {
-        if (Container::get('app')->isDebug()) {
+        if ($this->app->isDebug()) {
             $output->setVerbosity(Output::VERBOSITY_DEBUG);
         }
 
@@ -105,100 +118,153 @@ class Handle
 
     /**
      * @access protected
-     * @param  HttpException $e
+     * @param HttpException $e
      * @return Response
      */
-    protected function renderHttpException(HttpException $e)
+    protected function renderHttpException(Request $request, HttpException $e): Response
     {
         $status   = $e->getStatusCode();
-        $template = Container::get('app')->config('app.http_exception_template');
+        $template = $this->app->config->get('app.http_exception_template');
 
-        if (!Container::get('app')->isDebug() && !empty($template[$status])) {
+        if (!$this->app->isDebug() && !empty($template[$status])) {
             return Response::create($template[$status], 'view', $status)->assign(['e' => $e]);
         } else {
-            return $this->convertExceptionToResponse($e);
+            return $this->convertExceptionToResponse($request, $e);
         }
     }
 
     /**
-     * @access protected
-     * @param  Exception $exception
-     * @return Response
+     * 收集异常数据
+     * @param Throwable $exception
+     * @return array
      */
-    protected function convertExceptionToResponse(Exception $exception)
+    protected function convertExceptionToArray(Throwable $exception): array
     {
-        // 收集异常数据
-        if (Container::get('app')->isDebug()) {
-            // 调试模式，获取详细的错误信息
-            $data = [
-                'name'    => get_class($exception),
-                'file'    => $exception->getFile(),
-                'line'    => $exception->getLine(),
-                'message' => $this->getMessage($exception),
-                'trace'   => $exception->getTrace(),
-                'code'    => $this->getCode($exception),
-                'source'  => $this->getSourceCode($exception),
-                'datas'   => $this->getExtendData($exception),
-                'tables'  => [
-                    'GET Data'              => $_GET,
-                    'POST Data'             => $_POST,
-                    'Files'                 => $_FILES,
-                    'Cookies'               => $_COOKIE,
-                    'Session'               => isset($_SESSION) ? $_SESSION : [],
-                    'Server/Request Data'   => $_SERVER,
-                    'Environment Variables' => $_ENV,
-                    'ThinkPHP Constants'    => $this->getConst(),
-                ],
-            ];
-        } else {
-            // 部署模式仅显示 Code 和 Message
-            $data = [
-                'code'    => $this->getCode($exception),
-                'message' => $this->getMessage($exception),
-            ];
+        return $this->app->isDebug() ? $this->getDebugMsg($exception) : $this->getDeployMsg($exception);
+    }
 
-            if (!Container::get('app')->config('app.show_error_msg')) {
-                // 不显示详细错误信息
-                $data['message'] = Container::get('app')->config('app.error_message');
+    /**
+     * 是否显示错误信息
+     * @param \Throwable $exception
+     * @return bool
+     */
+    protected function isShowErrorMsg(Throwable $exception)
+    {
+        foreach ($this->showErrorMsg as $class) {
+            if ($exception instanceof $class) {
+                return true;
             }
         }
 
-        //保留一层
-        while (ob_get_level() > 1) {
-            ob_end_clean();
+        return false;
+    }
+
+    /**
+     * 获取部署模式异常数据
+     * @access protected
+     * @param Throwable $exception
+     * @return array
+     */
+    protected function getDeployMsg(Throwable $exception): array
+    {
+        $showErrorMsg = $this->isShowErrorMsg($exception);
+        if ($showErrorMsg || $this->app->config->get('app.show_error_msg', false)) {
+            $message = $this->getMessage($exception);
+        } else {
+            // 不显示详细错误信息
+            $message = $this->app->config->get('app.error_message');
         }
 
-        $data['echo'] = ob_get_clean();
+        return [
+            'code'    => $this->getCode($exception),
+            'message' => $message,
+        ];
+    }
 
-        ob_start();
-        extract($data);
-        include Container::get('app')->config('app.exception_tmpl');
+    /**
+     * 收集调试模式异常数据
+     * @access protected
+     * @param Throwable $exception
+     * @return array
+     */
+    protected function getDebugMsg(Throwable $exception): array
+    {
+        // 调试模式，获取详细的错误信息
+        $traces        = [];
+        $nextException = $exception;
 
-        // 获取并清空缓存
-        $content  = ob_get_clean();
-        $response = Response::create($content, 'html');
+        do {
+            $traces[] = [
+                'name'    => $nextException::class,
+                'file'    => $nextException->getFile(),
+                'line'    => $nextException->getLine(),
+                'code'    => $this->getCode($nextException),
+                'message' => $this->getMessage($nextException),
+                'trace'   => $nextException->getTrace(),
+                'source'  => $this->getSourceCode($nextException),
+            ];
+        } while ($nextException = $nextException->getPrevious());
+
+        return [
+            'code'    => $this->getCode($exception),
+            'message' => $this->getMessage($exception),
+            'traces'  => $traces,
+            'datas'   => $this->getExtendData($exception),
+            'tables'  => [
+                'GET Data'            => $this->app->request->get(),
+                'POST Data'           => $this->app->request->post(),
+                'Files'               => $this->app->request->file(),
+                'Cookies'             => $this->app->request->cookie(),
+                'Session'             => $this->app->exists('session') ? $this->app->session->all() : [],
+                'Server/Request Data' => $this->app->request->server(),
+            ],
+        ];
+    }
+
+    protected function isJson(Request $request)
+    {
+        return $request->isJson();
+    }
+
+    /**
+     * @access protected
+     * @param Throwable $exception
+     * @return Response
+     */
+    protected function convertExceptionToResponse(Request $request, Throwable $exception): Response
+    {
+        if ($this->isJson($request)) {
+            $response = Response::create($this->convertExceptionToArray($exception), 'json');
+        } else {
+            $response = Response::create($this->renderExceptionContent($exception));
+        }
 
         if ($exception instanceof HttpException) {
             $statusCode = $exception->getStatusCode();
             $response->header($exception->getHeaders());
         }
 
-        if (!isset($statusCode)) {
-            $statusCode = 500;
-        }
-        $response->code($statusCode);
+        return $response->code($statusCode ?? 500);
+    }
 
-        return $response;
+    protected function renderExceptionContent(Throwable $exception): string
+    {
+        ob_start();
+        $data = $this->convertExceptionToArray($exception);
+        extract($data);
+        include $this->app->config->get('app.exception_tmpl') ?: __DIR__ . '/../../tpl/think_exception.tpl';
+
+        return ob_get_clean();
     }
 
     /**
      * 获取错误编码
      * ErrorException则使用错误级别作为错误编码
      * @access protected
-     * @param  \Exception $exception
-     * @return integer                错误编码
+     * @param Throwable $exception
+     * @return int                错误编码
      */
-    protected function getCode(Exception $exception)
+    protected function getCode(Throwable $exception)
     {
         $code = $exception->getCode();
 
@@ -213,12 +279,28 @@ class Handle
      * 获取错误信息
      * ErrorException则使用错误级别作为错误编码
      * @access protected
-     * @param  \Exception $exception
+     * @param Throwable $exception
      * @return string                错误信息
      */
-    protected function getMessage(Exception $exception)
+    protected function getMessage(Throwable $exception): string
     {
         $message = $exception->getMessage();
+
+        if ($this->app->runningInConsole()) {
+            return $message;
+        }
+
+        $lang = $this->app->lang;
+
+        if (str_contains($message, ':')) {
+            $name    = strstr($message, ':', true);
+            $message = $lang->has($name) ? $lang->get($name) . strstr($message, ':') : $message;
+        } elseif (str_contains($message, ',')) {
+            $name    = strstr($message, ',', true);
+            $message = $lang->has($name) ? $lang->get($name) . ':' . substr(strstr($message, ','), 1) : $message;
+        } elseif ($lang->has($message)) {
+            $message = $lang->get($message);
+        }
 
         return $message;
     }
@@ -227,17 +309,17 @@ class Handle
      * 获取出错文件内容
      * 获取错误的前9行和后9行
      * @access protected
-     * @param  \Exception $exception
+     * @param Throwable $exception
      * @return array                 错误文件内容
      */
-    protected function getSourceCode(Exception $exception)
+    protected function getSourceCode(Throwable $exception): array
     {
         // 读取前9行和后9行
         $line  = $exception->getLine();
         $first = ($line - 9 > 0) ? $line - 9 : 1;
 
         try {
-            $contents = file($exception->getFile());
+            $contents = file($exception->getFile()) ?: [];
             $source   = [
                 'first'  => $first,
                 'source' => array_slice($contents, $first - 1, 19),
@@ -253,10 +335,10 @@ class Handle
      * 获取异常扩展信息
      * 用于非调试模式html返回类型显示
      * @access protected
-     * @param  \Exception $exception
+     * @param Throwable $exception
      * @return array                 异常类定义的扩展数据
      */
-    protected function getExtendData(Exception $exception)
+    protected function getExtendData(Throwable $exception): array
     {
         $data = [];
 
@@ -269,13 +351,13 @@ class Handle
 
     /**
      * 获取常量列表
-     * @access private
+     * @access protected
      * @return array 常量列表
      */
-    private static function getConst()
+    protected function getConst(): array
     {
         $const = get_defined_constants(true);
 
-        return isset($const['user']) ? $const['user'] : [];
+        return $const['user'] ?? [];
     }
 }

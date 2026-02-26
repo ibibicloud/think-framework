@@ -1,35 +1,48 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace think\response;
 
+use think\Cookie;
+use think\Request;
 use think\Response;
+use think\Session;
 
+/**
+ * Redirect Response
+ */
 class Redirect extends Response
 {
 
-    protected $options = [];
+    protected $request;
 
-    // URL参数
-    protected $params = [];
-
-    public function __construct($data = '', $code = 302, array $header = [], array $options = [])
+    public function __construct(Cookie $cookie, Request $request, Session $session, $data = '', int $code = 302)
     {
-        parent::__construct($data, $code, $header, $options);
+        $this->init((string) $data, $code);
+
+        $this->cookie  = $cookie;
+        $this->request = $request;
+        $this->session = $session;
 
         $this->cacheControl('no-cache,must-revalidate');
+    }
+
+    public function data($data)
+    {
+        $this->header['Location'] = $data;
+        return parent::data($data);
     }
 
     /**
      * 处理数据
      * @access protected
      * @param  mixed $data 要处理的数据
-     * @return mixed
+     * @return string
      */
-    protected function output($data)
+    protected function output($data): string
     {
-        $this->header['Location'] = $this->getTargetUrl();
-
-        return;
+        return '';
     }
 
     /**
@@ -41,36 +54,13 @@ class Redirect extends Response
      */
     public function with($name, $value = null)
     {
-        $session = $this->app['session'];
-
         if (is_array($name)) {
             foreach ($name as $key => $val) {
-                $session->flash($key, $val);
+                $this->session->flash($key, $val);
             }
         } else {
-            $session->flash($name, $value);
+            $this->session->flash($name, $value);
         }
-
-        return $this;
-    }
-
-    /**
-     * 获取跳转地址
-     * @access public
-     * @return string
-     */
-    public function getTargetUrl()
-    {
-        if (strpos($this->data, '://') || (0 === strpos($this->data, '/') && empty($this->params))) {
-            return $this->data;
-        } else {
-            return $this->app['url']->build($this->data, $this->params);
-        }
-    }
-
-    public function params($params = [])
-    {
-        $this->params = $params;
 
         return $this;
     }
@@ -78,12 +68,11 @@ class Redirect extends Response
     /**
      * 记住当前url后跳转
      * @access public
-     * @param string $url 指定记住的url
      * @return $this
      */
-    public function remember($url = null)
+    public function remember($complete = false)
     {
-        $this->app['session']->set('redirect_url', $url ?: $this->app['request']->url());
+        $this->session->set('redirect_url', $this->request->url($complete));
 
         return $this;
     }
@@ -91,18 +80,13 @@ class Redirect extends Response
     /**
      * 跳转到上次记住的url
      * @access public
-     * @param  string  $url 闪存数据不存在时的跳转地址
      * @return $this
      */
-    public function restore($url = null)
+    public function restore()
     {
-        $session = $this->app['session'];
-
-        if ($session->has('redirect_url')) {
-            $this->data = $session->get('redirect_url');
-            $session->delete('redirect_url');
-        } elseif ($url) {
-            $this->data = $url;
+        if ($this->session->has('redirect_url')) {
+            $this->data($this->session->get('redirect_url'));
+            $this->session->delete('redirect_url');
         }
 
         return $this;
