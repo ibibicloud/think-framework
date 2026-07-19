@@ -176,4 +176,5 @@ class View extends Manager
     {
         return $this->app->config->get('view.type', 'php');
     }
+    
 }

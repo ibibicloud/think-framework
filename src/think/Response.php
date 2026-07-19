@@ -420,4 +420,5 @@ abstract class Response
     {
         return $this->cookie;
     }
+    
 }

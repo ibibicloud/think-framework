@@ -4,18 +4,14 @@ declare(strict_types = 1);
 
 namespace think\log;
 
-use Psr\Log\LoggerInterface;
-use Psr\Log\LoggerTrait;
 use Stringable;
 use think\contract\LogHandlerInterface;
 use think\Event;
 use think\event\LogRecord;
 use think\event\LogWrite;
 
-class Channel implements LoggerInterface
+class Channel
 {
-    use LoggerTrait;
-
     /**
      * 日志信息
      * @var array<LogRecord>

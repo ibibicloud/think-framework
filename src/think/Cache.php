@@ -6,7 +6,6 @@ namespace think;
 
 use DateInterval;
 use DateTimeInterface;
-use Psr\SimpleCache\CacheInterface;
 use think\cache\Driver;
 use think\cache\TagSet;
 use think\exception\InvalidArgumentException;
@@ -17,7 +16,7 @@ use think\helper\Arr;
  * @mixin Driver
  * @mixin \think\cache\driver\File
  */
-class Cache extends Manager implements CacheInterface
+class Cache extends Manager
 {
 
     protected $namespace = '\\think\\cache\\driver\\';

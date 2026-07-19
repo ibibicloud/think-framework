@@ -1,5 +1,5 @@
 {
-    "name": "ibibicloud/framework",
+    "name": "ibibicloud/think-framework",
     "type": "library",
     "license": "Apache-2.0",
     "require": {
@@ -7,12 +7,8 @@
         "ext-json": "*",
         "ext-mbstring": "*",
         "ext-ctype": "*",
-        "psr/log": "3.*",
-        "psr/simple-cache": "3.*",
-        "psr/http-message": "2.*",
-        "ibibicloud/think-orm": "8.*",
-        "ibibicloud/think-helper": "8.*",
         "ibibicloud/think-container": "8.*",
+        "ibibicloud/think-orm": "8.*",
         "ibibicloud/think-validate": "8.*"
     },
     "autoload": {
@@ -21,13 +17,5 @@
         },
         "files": [
         ]
-    },
-    "minimum-stability": "dev",
-    "prefer-stable": true,
-    "config": {
-        "sort-packages": true
-    },
-    "scripts": {
-        "php-cs-fixer": "php-cs-fixer fix src/ --dry-run --diff"
     }
 }

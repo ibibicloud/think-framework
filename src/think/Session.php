@@ -54,4 +54,5 @@ class Session extends Manager
     {
         return $this->app->config->get('session.type', 'file');
     }
+    
 }

@@ -22,8 +22,7 @@ abstract class Manager
     protected $namespace = null;
 
     public function __construct(protected App $app)
-    {
-    }
+    {}
 
     /**
      * 获取驱动实例
@@ -162,4 +161,5 @@ abstract class Manager
     {
         return $this->driver()->$method(...$parameters);
     }
+    
 }

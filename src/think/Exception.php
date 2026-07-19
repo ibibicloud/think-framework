@@ -48,4 +48,5 @@ class Exception extends \Exception
     {
         return $this->data;
     }
+    
 }

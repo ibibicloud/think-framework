@@ -5,8 +5,6 @@ declare(strict_types = 1);
 namespace think;
 
 use InvalidArgumentException;
-use Psr\Log\LoggerInterface;
-use Psr\Log\LoggerTrait;
 use Stringable;
 use think\event\LogWrite;
 use think\helper\Arr;
@@ -18,18 +16,17 @@ use think\log\ChannelSet;
  * @package think
  * @mixin Channel
  */
-class Log extends Manager implements LoggerInterface
+class Log extends Manager
 {
-    use LoggerTrait;
     const EMERGENCY = 'emergency';
-    const ALERT = 'alert';
-    const CRITICAL = 'critical';
-    const ERROR = 'error';
-    const WARNING = 'warning';
-    const NOTICE = 'notice';
-    const INFO = 'info';
-    const DEBUG = 'debug';
-    const SQL = 'sql';
+    const ALERT     = 'alert';
+    const CRITICAL  = 'critical';
+    const ERROR     = 'error';
+    const WARNING   = 'warning';
+    const NOTICE    = 'notice';
+    const INFO      = 'info';
+    const DEBUG     = 'debug';
+    const SQL       = 'sql';
 
     protected $namespace = '\\think\\log\\driver\\';
 
@@ -238,4 +235,5 @@ class Log extends Manager implements LoggerInterface
     {
         $this->log($method, ...$parameters);
     }
+    
 }

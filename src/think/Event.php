@@ -285,4 +285,5 @@ class Event
 
         return $this->app->invoke($call, [$params]);
     }
+    
 }

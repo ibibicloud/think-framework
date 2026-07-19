@@ -99,7 +99,13 @@ if (!function_exists('echo_value')) {
         /* Base */
         body {
             color: #333;
-            font: 16px Verdana, "Helvetica Neue", helvetica, Arial, 'Microsoft YaHei', sans-serif;
+            font-family:
+                "Source Code Pro", "Inter",
+                -apple-system, BlinkMacSystemFont,
+                "Segoe UI", "Helvetica Neue",
+                "PingFang SC", "Hiragino Sans GB",
+                sans-serif;
+            font-size: 16px;
             margin: 0;
             padding: 0 20px 20px;
         }
@@ -272,13 +278,6 @@ if (!function_exists('echo_value')) {
             margin: 0;
         }
 
-        /* Copyright Info */
-        .copyright{
-            margin-top: 24px;
-            padding: 12px 0;
-            border-top: 1px solid #eee;
-        }
-
         /* SPAN elements with the classes below are added by prettyprint. */
         pre.prettyprint .pln { color: #000 }  /* plain text */
         pre.prettyprint .str { color: #080 }  /* string content */
@@ -393,12 +392,6 @@ if (!function_exists('echo_value')) {
     </div>
     <?php } ?>
 
-    <div class="copyright">
-        <a title="官方网站" href="http://www.thinkphp.cn">ThinkPHP</a> 
-        <span>V<?php echo \think\facade\App::version(); ?></span> 
-        <span>{ 十年磨一剑-为API开发设计的高性能框架 }</span>
-        <span>- <a title="官方手册" href="https://doc.thinkphp.cn">官方手册</a></span>
-    </div>
     <?php if (\think\facade\App::isDebug()) { ?>
     <script>
         function $(selector, node){

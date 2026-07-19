@@ -42,7 +42,7 @@ class Http
 
     public function __construct(protected App $app)
     {
-        $this->routePath = $this->app->getRootPath() . 'route' . DIRECTORY_SEPARATOR;
+        $this->routePath = $this->app->getRootPath() . 'config' . DIRECTORY_SEPARATOR;
     }
 
     /**
@@ -221,7 +221,7 @@ class Http
         $routePath = $this->getRoutePath();
 
         if (is_dir($routePath)) {
-            $files = glob($routePath . '*.php');
+            $files = glob($routePath . '*.route');
             foreach ($files as $file) {
                 include $file;
             }
@@ -253,7 +253,7 @@ class Http
         return $this->app->make(Handle::class)->render($request, $e);
     }
 
-/**
+    /**
      * HttpEnd
      * @param Response $response
      * @return void
@@ -273,4 +273,5 @@ class Http
         // 写入日志
         $this->app->log->save();
     }
+    
 }

@@ -262,4 +262,5 @@ class Lang
 
         return $value;
     }
+    
 }

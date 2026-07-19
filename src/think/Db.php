@@ -106,4 +106,5 @@ class Db extends DbManager
             return $this->event->trigger('db.' . $event, $params, $once);
         }
     }
+    
 }

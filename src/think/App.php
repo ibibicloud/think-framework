@@ -159,7 +159,7 @@ class App extends Container
         'think\CacheManager'      => Cache::class,
 
         // 接口依赖注入
-        'Psr\Log\LoggerInterface' => Log::class,
+        'log' => Log::class,
     ];
 
     /**
@@ -651,4 +651,5 @@ class App extends Container
     {
         return dirname($this->thinkPath, 4) . DIRECTORY_SEPARATOR;
     }
+    
 }

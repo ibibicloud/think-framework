@@ -2,14 +2,13 @@
 
 namespace think\session\driver;
 
-use Psr\SimpleCache\CacheInterface;
 use think\contract\SessionHandlerInterface;
 use think\helper\Arr;
 
 class Cache implements SessionHandlerInterface
 {
 
-    /** @var CacheInterface */
+    /** @var  */
     protected $handler;
 
     /** @var int */

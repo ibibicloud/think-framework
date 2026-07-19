@@ -2126,4 +2126,5 @@ class Request implements ArrayAccess
     public function offsetSet(mixed $name, mixed $value): void {}
 
     public function offsetUnset(mixed $name): void {}
+    
 }

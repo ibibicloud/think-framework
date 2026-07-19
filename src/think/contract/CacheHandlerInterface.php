@@ -6,13 +6,12 @@ namespace think\contract;
 
 use DateInterval;
 use DateTimeInterface;
-use Psr\SimpleCache\CacheInterface;
 use think\cache\TagSet;
 
 /**
  * 缓存驱动接口
  */
-interface CacheHandlerInterface extends CacheInterface
+interface CacheHandlerInterface
 {
 
     /**
