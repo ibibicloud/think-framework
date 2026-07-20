@@ -10,6 +10,6 @@ namespace think\event;
 class LogWrite
 {
     public function __construct(public string $channel, public array $log)
-    {
-    }
+    {}
+    
 }

@@ -102,4 +102,5 @@ class LoadLangPack
             $cookie->set($this->config['cookie_var'], $langSet);
         }
     }
+    
 }

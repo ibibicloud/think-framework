@@ -772,4 +772,5 @@ class RuleGroup extends Rule
     {
         $this->rules = [];
     }
+    
 }

@@ -30,4 +30,5 @@ class Lang extends Facade
     {
         return 'lang';
     }
+    
 }

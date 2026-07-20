@@ -38,8 +38,7 @@ abstract class Dispatch
     protected $app;
 
     public function __construct(protected Request $request, protected Rule $rule, protected $dispatch, protected array $param = [], protected array $option = [], protected ?RuleItem $miss = null)
-    {
-    }
+    {}
 
     /**
      * 执行路由调度
@@ -357,4 +356,5 @@ abstract class Dispatch
             'rule'     => $this->rule,
         ];
     }
+    
 }

@@ -38,4 +38,5 @@ class Cache implements SessionHandlerInterface
     {
         return $this->handler->set($this->prefix . $sessionId, $data, $this->expire);
     }
+    
 }

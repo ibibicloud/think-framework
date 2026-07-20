@@ -41,4 +41,5 @@ class PaginatorService extends Service
             return 1;
         });
     }
+    
 }

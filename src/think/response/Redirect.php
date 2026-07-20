@@ -91,4 +91,5 @@ class Redirect extends Response
 
         return $this;
     }
+    
 }

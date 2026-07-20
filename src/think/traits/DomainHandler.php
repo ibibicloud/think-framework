@@ -240,4 +240,5 @@ trait DomainHandler
     {
         return $this->server('REMOTE_PORT') ?? 0;
     }
+    
 }

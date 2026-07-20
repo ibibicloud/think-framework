@@ -45,4 +45,5 @@ interface TemplateHandlerInterface
      * @return mixed
      */
     public function getConfig(string $name);
+    
 }

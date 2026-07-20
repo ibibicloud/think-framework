@@ -47,4 +47,5 @@ class Log extends Facade
     {
         return 'log';
     }
+    
 }

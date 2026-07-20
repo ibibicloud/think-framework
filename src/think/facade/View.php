@@ -31,4 +31,5 @@ class View extends Facade
     {
         return 'view';
     }
+    
 }

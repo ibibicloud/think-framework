@@ -31,4 +31,5 @@ class Middleware extends Facade
     {
         return 'middleware';
     }
+    
 }

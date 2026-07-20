@@ -34,4 +34,5 @@ class Session extends Facade
     {
         return 'session';
     }
+    
 }

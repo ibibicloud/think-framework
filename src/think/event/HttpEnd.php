@@ -8,5 +8,4 @@ namespace think\event;
  * HttpEnd事件类
  */
 class HttpEnd
-{
-}
+{}

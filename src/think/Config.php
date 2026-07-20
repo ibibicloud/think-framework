@@ -29,8 +29,7 @@ class Config
      * @access public
      */
     public function __construct(protected string $path = '', protected string $ext = '.php')
-    {
-    }
+    {}
 
     public static function __make(App $app)
     {

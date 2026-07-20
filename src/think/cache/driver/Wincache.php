@@ -159,4 +159,5 @@ class Wincache extends Driver
     {
         wincache_ucache_delete($keys);
     }
+    
 }

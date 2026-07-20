@@ -8,5 +8,4 @@ namespace think\event;
  * HttpRun事件类
  */
 class HttpRun
-{
-}
+{}

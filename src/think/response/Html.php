@@ -23,4 +23,5 @@ class Html extends Response
         $this->init($data, $code);
         $this->cookie = $cookie;
     }
+    
 }

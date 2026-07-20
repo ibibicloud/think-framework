@@ -139,4 +139,5 @@ class View extends Response
     {
         return $this->view->exists($name);
     }
+    
 }

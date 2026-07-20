@@ -128,4 +128,5 @@ class Controller extends Dispatch
 
         throw new ClassNotFoundException('class not exists:' . $class, $class);
     }
+    
 }

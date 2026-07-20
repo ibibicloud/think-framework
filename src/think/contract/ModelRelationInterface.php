@@ -87,4 +87,5 @@ interface ModelRelationInterface
      * @return Query
      */
     public function hasWhere($where = [], $fields = null, string $joinType = ''): Query;
+    
 }

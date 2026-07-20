@@ -191,4 +191,5 @@ class File implements LogHandlerInterface
             }
         }
     }
+    
 }

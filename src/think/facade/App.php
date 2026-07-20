@@ -48,4 +48,5 @@ class App extends Facade
     {
         return 'app';
     }
+    
 }

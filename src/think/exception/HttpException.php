@@ -25,4 +25,5 @@ class HttpException extends \RuntimeException
     {
         return $this->headers;
     }
+    
 }

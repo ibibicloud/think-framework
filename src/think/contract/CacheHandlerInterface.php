@@ -59,4 +59,5 @@ interface CacheHandlerInterface
      * @return void
      */
     public function clearTag($keys);
+    
 }

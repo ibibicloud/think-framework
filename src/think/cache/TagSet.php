@@ -19,8 +19,7 @@ class TagSet
      * @param Driver $handler 缓存对象
      */
     public function __construct(protected array $tag, protected Driver $handler)
-    {
-    }
+    {}
 
     /**
      * 写入缓存
@@ -110,4 +109,5 @@ class TagSet
 
         return true;
     }
+    
 }

@@ -215,4 +215,5 @@ class RuleName
             'suffix' => $item->getSuffix(),
         ];
     }
+    
 }

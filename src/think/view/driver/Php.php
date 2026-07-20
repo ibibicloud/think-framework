@@ -198,4 +198,5 @@ class Php implements TemplateHandlerInterface
     {
         return $this->config[$name] ?? null;
     }
+    
 }

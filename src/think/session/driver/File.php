@@ -237,4 +237,5 @@ class File implements SessionHandlerInterface
     {
         return is_file($file) && unlink($file);
     }
+    
 }

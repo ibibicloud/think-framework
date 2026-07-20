@@ -29,4 +29,5 @@ class Cookie extends Facade
     {
         return 'cookie';
     }
+    
 }

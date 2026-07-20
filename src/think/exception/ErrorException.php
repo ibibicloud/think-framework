@@ -46,4 +46,5 @@ class ErrorException extends Exception
     {
         return $this->severity;
     }
+    
 }

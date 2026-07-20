@@ -317,4 +317,5 @@ class RuleItem extends Rule
 
         return $this;
     }
+    
 }

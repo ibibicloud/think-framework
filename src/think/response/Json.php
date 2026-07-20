@@ -50,4 +50,5 @@ class Json extends Response
             throw $e;
         }
     }
+    
 }

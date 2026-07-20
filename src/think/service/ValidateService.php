@@ -20,4 +20,5 @@ class ValidateService extends Service
             $validate->setRequest($this->app->request);
         });
     }
+    
 }

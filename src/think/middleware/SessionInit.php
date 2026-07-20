@@ -16,8 +16,7 @@ use think\Session;
 class SessionInit
 {
     public function __construct(protected App $app, protected Session $session)
-    {
-    }
+    {}
 
     /**
      * Session初始化
@@ -60,4 +59,5 @@ class SessionInit
     {
         $this->session->save();
     }
+    
 }

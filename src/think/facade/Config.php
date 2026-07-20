@@ -26,4 +26,5 @@ class Config extends Facade
     {
         return 'config';
     }
+    
 }

@@ -25,8 +25,7 @@ class Channel
     protected bool $close = false;
 
     public function __construct(protected string $name, protected LogHandlerInterface $logger, protected array $allow, protected bool $lazy, protected Event $event)
-    {
-    }
+    {}
 
     /**
      * 关闭通道
@@ -147,4 +146,5 @@ class Channel
     {
         $this->log($method, ...$parameters);
     }
+    
 }

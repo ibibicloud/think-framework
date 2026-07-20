@@ -243,4 +243,5 @@ class Redis extends Driver
     {
         return call_user_func_array([$this->handler(), $method], $args);
     }
+    
 }

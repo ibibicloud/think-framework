@@ -109,4 +109,5 @@ class Error
     {
         return $this->app->make(Handle::class);
     }
+    
 }

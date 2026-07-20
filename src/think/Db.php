@@ -39,8 +39,7 @@ class Db extends DbManager
      * @return void
      */
     protected function modelMaker(): void
-    {
-    }
+    {}
 
     /**
      * 设置配置对象

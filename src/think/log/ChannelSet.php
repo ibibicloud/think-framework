@@ -14,8 +14,7 @@ use think\Log;
 class ChannelSet
 {
     public function __construct(protected Log $log, protected array $channels)
-    {
-    }
+    {}
 
     public function __call($method, $arguments)
     {
@@ -23,4 +22,5 @@ class ChannelSet
             $this->log->channel($channel)->{$method}(...$arguments);
         }
     }
+
 }

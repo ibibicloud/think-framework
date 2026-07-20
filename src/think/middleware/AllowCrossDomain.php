@@ -52,4 +52,5 @@ class AllowCrossDomain
 
         return $next($request)->header($header);
     }
+    
 }

@@ -33,4 +33,5 @@ class FormTokenCheck
 
         return $next($request);
     }
+    
 }

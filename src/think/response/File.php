@@ -150,4 +150,5 @@ class File extends Response
 
         return $this;
     }
+    
 }

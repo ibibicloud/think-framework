@@ -37,4 +37,5 @@ class Cache extends Facade
     {
         return 'cache';
     }
+    
 }

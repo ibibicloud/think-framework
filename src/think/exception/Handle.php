@@ -31,8 +31,7 @@ class Handle
     ];
 
     public function __construct(protected App $app)
-    {
-    }
+    {}
 
     /**
      * Report or log an exception.
@@ -360,4 +359,5 @@ class Handle
 
         return $const['user'] ?? [];
     }
+    
 }

@@ -73,4 +73,5 @@ class Domain extends RuleGroup
             }
         }
     }
+    
 }

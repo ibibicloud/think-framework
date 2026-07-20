@@ -116,4 +116,5 @@ class Xml extends Response
 
         return $xml;
     }
+    
 }

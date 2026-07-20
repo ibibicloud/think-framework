@@ -24,4 +24,5 @@ class LogRecord
         $this->message = $message;
         $this->time    = new DateTimeImmutable();
     }
+    
 }

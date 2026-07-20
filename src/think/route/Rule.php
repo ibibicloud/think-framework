@@ -1060,4 +1060,5 @@ abstract class Rule
             'pattern' => $this->pattern,
         ];
     }
+    
 }

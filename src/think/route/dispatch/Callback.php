@@ -106,4 +106,5 @@ class Callback extends Dispatch
         $vars = $this->getActionBindVars();
         return $this->app->invoke($this->dispatch, $vars);
     }
+    
 }

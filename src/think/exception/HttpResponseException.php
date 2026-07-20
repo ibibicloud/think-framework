@@ -12,8 +12,7 @@ use think\Response;
 class HttpResponseException extends \RuntimeException
 {
     public function __construct(protected Response $response)
-    {
-    }
+    {}
 
     public function getResponse()
     {

@@ -252,4 +252,5 @@ class Resource extends RuleGroup
 
         return $this;
     }
+    
 }
